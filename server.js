@@ -2870,9 +2870,7 @@ app.post('/api/checkout/custom', async (req, res) => {
 
         const draftOrder = draftOrderResult.draft_order;
 
-        // Complete the draft order with payment_pending=true
-        // Shopify needs time to finish calculating taxes/shipping after creation
-        // so we retry a few times with a delay if it's not ready yet
+        // Resolve a customer-facing invoice URL without completing the draft order
         let checkoutUrl = null;
 
         const absolutizeCheckoutUrl = (checkoutUrl) => {
@@ -2921,73 +2919,26 @@ app.post('/api/checkout/custom', async (req, res) => {
 
             return `${absoluteStore}/${trimmed.replace(/^\/+/, '')}`;
         };
-        
-        try {
-            let completeResult = null;
-            
-            for (let attempt = 0; attempt < 4; attempt++) {
-                // Wait before trying (longer each attempt)
-                await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 1500 : 2000));
-                
-                try {
-                    completeResult = await shopifyAdminRequest(
-                        `/draft_orders/${draftOrder.id}/complete.json?payment_pending=true`, 
-                        'PUT'
-                    );
-                    // Success — break out of retry loop
-                    break;
-                } catch (retryErr) {
-                    const errMsg = typeof retryErr.message === 'string' ? retryErr.message : JSON.stringify(retryErr);
-                    if (errMsg.includes('not finished calculating') && attempt < 3) {
-                        console.warn(`  Draft order not ready, retrying (${attempt + 1}/4)...`);
-                        continue;
-                    }
-                    throw retryErr;
-                }
-            }
-            
-            if (completeResult && completeResult.draft_order) {
-                const completedDraft = completeResult.draft_order;
-                
-                // Get the order's checkout URL
-                if (completedDraft.order_id) {
-                    const orderResult = await shopifyAdminRequest(`/orders/${completedDraft.order_id}.json`);
-                    const order = orderResult.order;
-                    
-                    if (completedDraft.invoice_url) {
-                        checkoutUrl = absolutizeCheckoutUrl(completedDraft.invoice_url);
-                    } else if (order && order.order_status_url) {
-                        checkoutUrl = absolutizeCheckoutUrl(order.order_status_url);
-                    }
-                }
 
-                // Fallback to invoice_url if available
-                if (!checkoutUrl && completedDraft.invoice_url) {
-                    checkoutUrl = absolutizeCheckoutUrl(completedDraft.invoice_url);
-                }
-            }
-        } catch (e) {
-            console.warn('  Could not complete draft order:', e.message);
-        }
+        // Prefer the invoice URL returned immediately by Shopify when creating the draft order.
+        checkoutUrl = absolutizeCheckoutUrl(draftOrder.invoice_url);
 
-        // If completion failed, try invoice_url from original draft order
+        // If Shopify hasn't generated it yet, poll the draft order a few times.
         if (!checkoutUrl) {
-            // Poll for invoice_url to be ready (max 3 attempts)
-            for (let attempt = 0; attempt < 3 && !checkoutUrl; attempt++) {
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-                
+            for (let attempt = 0; attempt < 5 && !checkoutUrl; attempt++) {
+                await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 800 : 1200));
+
                 try {
                     const updatedDraftResult = await shopifyAdminRequest(`/draft_orders/${draftOrder.id}.json`);
                     checkoutUrl = absolutizeCheckoutUrl(updatedDraftResult.draft_order?.invoice_url);
                 } catch (e) {
-                    console.warn('  Polling failed:', e.message);
+                    console.warn('  Polling invoice_url failed:', e.message);
                 }
             }
         }
 
-        // Final fallback - return null so frontend uses standard cart checkoutUrl
         if (!checkoutUrl) {
-            console.warn('  No valid checkout URL found, frontend will use cart.checkoutUrl fallback');
+            console.warn('  No valid invoice URL found, frontend will use cart.checkoutUrl fallback');
         }
 
         checkoutUrl = absolutizeCheckoutUrl(checkoutUrl);
