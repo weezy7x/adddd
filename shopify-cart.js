@@ -26,14 +26,24 @@ const ShopifyIntegration = {
         if (!trimmed) return trimmed;
 
         const shopifyDomain = `https://${SHOPIFY_CONFIG.storeDomain}`;
+        const badHosts = new Set([
+            'myflowers-shop.fr',
+            'www.myflowers-shop.fr',
+            'account.myflowers-shop.fr',
+            'account.www.myflowers-shop.fr'
+        ]);
+
+        const rewriteParsedUrl = (urlObj) => {
+            const host = String(urlObj.hostname || '').toLowerCase();
+            if (badHosts.has(host)) {
+                return `${shopifyDomain}${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+            }
+            return urlObj.toString();
+        };
 
         if (/^https?:\/\//i.test(trimmed)) {
             try {
-                const url = new URL(trimmed);
-                if (url.hostname === 'myflowers-shop.fr' || url.hostname === 'www.myflowers-shop.fr') {
-                    return `${shopifyDomain}${url.pathname}${url.search}${url.hash}`;
-                }
-                return trimmed;
+                return rewriteParsedUrl(new URL(trimmed));
             } catch {
                 return trimmed;
             }
@@ -41,11 +51,7 @@ const ShopifyIntegration = {
 
         if (trimmed.startsWith('//')) {
             try {
-                const url = new URL(`https:${trimmed}`);
-                if (url.hostname === 'myflowers-shop.fr' || url.hostname === 'www.myflowers-shop.fr') {
-                    return `${shopifyDomain}${url.pathname}${url.search}${url.hash}`;
-                }
-                return `https:${trimmed}`;
+                return rewriteParsedUrl(new URL(`https:${trimmed}`));
             } catch {
                 return `https:${trimmed}`;
             }
@@ -1483,10 +1489,7 @@ const ShopifyIntegration = {
             DeliverySystem.open(subtotal);
         } else if (this.cart && this.cart.checkoutUrl) {
             // Fallback: direct checkout if delivery system not loaded
-            const finalShopifyCartUrl = this.normalizeCheckoutUrl(this.cart.checkoutUrl);
-            console.log('FINAL CHECKOUT URL shopify-cart =', finalShopifyCartUrl);
-            alert(finalShopifyCartUrl);
-            window.location.href = finalShopifyCartUrl;
+            window.location.href = this.normalizeCheckoutUrl(this.cart.checkoutUrl);
         }
     },
 
