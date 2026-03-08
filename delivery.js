@@ -9,19 +9,37 @@ const DeliverySystem = {
         const trimmed = checkoutUrl.trim();
         if (!trimmed) return trimmed;
 
+        const shopifyDomain = 'https://myflowers-secours.myshopify.com';
+
         if (/^https?:\/\//i.test(trimmed)) {
-            return trimmed;
+            try {
+                const url = new URL(trimmed);
+                if (url.hostname === 'myflowers-shop.fr' || url.hostname === 'www.myflowers-shop.fr') {
+                    return `${shopifyDomain}${url.pathname}${url.search}${url.hash}`;
+                }
+                return trimmed;
+            } catch {
+                return trimmed;
+            }
         }
 
         if (trimmed.startsWith('//')) {
-            return `https:${trimmed}`;
+            try {
+                const url = new URL(`https:${trimmed}`);
+                if (url.hostname === 'myflowers-shop.fr' || url.hostname === 'www.myflowers-shop.fr') {
+                    return `${shopifyDomain}${url.pathname}${url.search}${url.hash}`;
+                }
+                return `https:${trimmed}`;
+            } catch {
+                return `https:${trimmed}`;
+            }
         }
 
         if (trimmed.startsWith('/')) {
-            return `https://myflowers-secours.myshopify.com${trimmed}`;
+            return `${shopifyDomain}${trimmed}`;
         }
 
-        return `https://myflowers-secours.myshopify.com/${trimmed.replace(/^\/+/, '')}`;
+        return `${shopifyDomain}/${trimmed.replace(/^\/+/, '')}`;
     },
 
     // Configuration
