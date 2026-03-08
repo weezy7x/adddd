@@ -1,24 +1,8 @@
 // ===================================
-// Configuration Shopify
+// Delivery System - My Flowers
 // ===================================
-const SHOPIFY_CONFIG = {
-    storeDomain: 'myflowers-secours.myshopify.com',
-    storefrontAccessToken: 'f04036dacc2874f796274bcc8ed64559',
-    apiVersion: '2024-01'
-};
 
-// ===================================
-// Shopify Integration Complète
-// ===================================
-const ShopifyIntegration = {
-    products: [],
-    cart: null,
-    cartItems: [],
-    currentPage: 1,
-    productsPerPage: 12,
-    currentFilter: 'all',
-    currentSort: 'default',
-    searchQuery: '',
+const DeliverySystem = {
     normalizeCheckoutUrl(checkoutUrl) {
         if (!checkoutUrl || typeof checkoutUrl !== 'string') return checkoutUrl;
 
@@ -63,2265 +47,1432 @@ const ShopifyIntegration = {
 
         return `${shopifyDomain}/${trimmed.replace(/^\/+/, '')}`;
     },
-    
-    
-    /**
-     * Initialize
-     */
-    async init() {
-        await this.fetchProducts();
-        await this.createCart();
-        this.initCartUI();
-        this.loadCartFromStorage();
+
+    // Configuration
+    config: {
+        shopAddress: '21 Rue Lafayette, 57000 Metz, France',
+        shopLat: 49.1197,
+        shopLng: 6.1744,
+        maxLocalDistance: 50, // km max pour livraison locale (par route)
+        
+        // Tarifs livraison locale (par leurs soins)
+        localPricing: [
+            { maxKm: 10, price: 0, label: 'Gratuit' },
+            { maxKm: 35, price: 10, label: '10,00 €' },
+            { maxKm: 50, price: 20, label: '20,00 €' }
+        ],
+        
+        // Tarifs France (GLS)
+        francePricing: {
+            domicile: { price: 15, label: '15,00 €' },
+            relais: { price: 10, label: '10,00 €' }
+        },
+        
+        // Retrait en boutique
+        pickupPrice: 0
     },
-    
-    /**
-     * Initialize for Homepage
-     */
-    async loadFeaturedProducts() {
+
+    // State
+    selectedMode: null,       // 'local', 'france', 'pickup'
+    selectedSubMode: null,    // 'domicile', 'relais' (for france)
+    deliveryAddress: '',
+    deliveryDistance: null,
+    deliveryPrice: null,
+    selectedDate: null,
+    cartSubtotal: 0,
+    unavailableDates: [],       // Dates where local delivery is unavailable
+    unavailablePickupDates: [], // Dates where pickup is unavailable
+    currentCalendarMonth: new Date().getMonth(),
+    currentCalendarYear: new Date().getFullYear(),
+
+    // ===================================
+    // Initialize
+    // ===================================
+    init() {
+        this.loadUnavailableDates();
+        this.createDeliveryPanel();
+        this.bindEvents();
+    },
+
+    // ===================================
+    // Load Unavailable Dates from Backend
+    // ===================================
+    async loadUnavailableDates() {
         try {
-            await this.init();
-            await this.fetchCollections();
-        } catch (error) {
-            console.error('❌ Erreur chargement homepage:', error);
-            this.products = this.products || [];
-        }
-        this.displayHomepageCollections();
-        this.displayFeaturedProducts();
-    },
-    
-    /**
-     * Display Shopify collections on the homepage
-     */
-    displayHomepageCollections() {
-        const grid = document.getElementById('homepageCollections');
-        if (!grid || this.collections.length === 0) return;
-        
-        // Filter to only featured collections if config is available
-        let displayCollections = this.collections;
-        if (this.featuredCollections && this.featuredCollections.length > 0) {
-            displayCollections = this.collections.filter(c => {
-                const numericId = c.id.split('/').pop();
-                return this.featuredCollections.includes(numericId);
-            });
-        }
-        
-        if (displayCollections.length === 0) {
-            // Fallback: show all if no featured configured
-            displayCollections = this.collections;
-        }
-        
-        // Icon mapping fallback
-        const iconMap = {
-            'bouquet': 'fa-spa', 'rose': 'fa-gem', 'éternelle': 'fa-gem', 'eternelle': 'fa-gem',
-            'kinder': 'fa-gift', 'box': 'fa-gift', 'coffret': 'fa-gift',
-            'peluche': 'fa-heart', 'teddy': 'fa-heart',
-            'accessoire': 'fa-ring', 'plante': 'fa-leaf',
-            'composition': 'fa-seedling', 'mariage': 'fa-rings-wedding',
-        };
-        
-        const self = this;
-        function getIcon(collection) {
-            // First check saved icons
-            const numericId = collection.id.split('/').pop();
-            if (self.collectionIcons && self.collectionIcons[numericId]) {
-                return self.collectionIcons[numericId];
-            }
-            // Fallback to keyword detection
-            const lower = collection.title.toLowerCase();
-            for (const [kw, icon] of Object.entries(iconMap)) {
-                if (lower.includes(kw)) return icon;
-            }
-            return 'fa-tag';
-        }
-        
-        grid.innerHTML = displayCollections.map((collection, index) => {
-            const icon = getIcon(collection);
-            const image = collection.image?.url || '';
-            const description = collection.description || '';
-            const truncatedDesc = description.length > 80 ? description.substring(0, 80) + '...' : description;
-            const productCount = collection.products.edges.length;
-            
-            // Use first product image as fallback if collection has no image
-            let displayImage = image;
-            if (!displayImage && collection.products.edges.length > 0) {
-                // We'd need product images, so use a placeholder
-                displayImage = '';
+            // Load delivery unavailable dates
+            const deliveryResponse = await fetch('https://myflowers-shop.fr/api/delivery/unavailable-dates');
+            if (deliveryResponse.ok) {
+                const deliveryData = await deliveryResponse.json();
+                this.unavailableDates = deliveryData.unavailableDates || [];
             }
             
-            return `
-                <a href="boutique.html?filter=collection:${collection.handle}" class="category-card" data-aos="fade-up" data-aos-delay="${(index + 1) * 100}">
-                    <div class="category-image">
-                        ${displayImage ? 
-                            `<img src="${displayImage}" alt="${collection.title}">` :
-                            `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f9f5f0 0%,#e8ddd3 100%);"><i class="fas ${icon}" style="font-size:3rem;color:#d4a574;"></i></div>`
-                        }
-                        <div class="category-overlay">
-                            <i class="fas ${icon}"></i>
-                        </div>
-                    </div>
-                    <h3>${collection.title}</h3>
-                    <p>${truncatedDesc || productCount + ' produit' + (productCount > 1 ? 's' : '')}</p>
-                    <span class="category-link">Découvrir <i class="fas fa-arrow-right"></i></span>
-                </a>
-            `;
-        }).join('');
-        
-        if (typeof AOS !== 'undefined') AOS.refresh();
-    },
-    
-    /**
-     * Initialize for Shop Page (Router Logic)
-     */
-    async initShopPage() {
-        try {
-            await this.init();
-            await this.fetchCollections();
-            this.buildCollectionFilters();
+            // Load pickup unavailable dates
+            const pickupResponse = await fetch('https://myflowers-shop.fr/api/pickup/unavailable-dates');
+            if (pickupResponse.ok) {
+                const pickupData = await pickupResponse.json();
+                this.unavailablePickupDates = pickupData.unavailableDates || [];
+            }
+            
         } catch (error) {
-            console.error('❌ Erreur initialisation boutique:', error);
-            this.products = this.products || [];
-        }
-        
-        // Router Logic: Check URL params
-        const urlParams = new URLSearchParams(window.location.search);
-        const productHandle = urlParams.get('product');
-        const filterParam = urlParams.get('filter');
-        
-        if (productHandle) {
-            // State: Product Page
-            this.toggleShopView('product');
-            await this.loadSingleProduct(productHandle);
-        } else {
-            // State: Shop Grid
-            this.toggleShopView('grid');
-            if (filterParam) {
-                this.currentFilter = filterParam;
-                document.querySelectorAll('.filter-btn').forEach(btn => {
-                    btn.classList.toggle('active', btn.dataset.filter === filterParam);
-                });
-            }
-            this.setupShopControls();
-            this.displayProducts();
+            console.warn('Could not load unavailable dates:', error);
+            this.unavailableDates = [];
+            this.unavailablePickupDates = [];
         }
     },
-    
-    /**
-     * Toggle between Grid and Product View
-     */
-    toggleShopView(view) {
-        const gridContainer = document.getElementById('shop-container');
-        const productContainer = document.getElementById('product-page-container');
-        const pageTitle = document.getElementById('pageTitle');
-        const pageSubtitle = document.getElementById('pageSubtitle');
-        
-        if (view === 'product') {
-            if(gridContainer) gridContainer.style.display = 'none';
-            if(productContainer) productContainer.style.display = 'block';
-            if(pageTitle) pageTitle.textContent = "Nos Créations";
-            if(pageSubtitle) pageSubtitle.style.display = 'none';
-            window.scrollTo(0, 0);
-        } else {
-            if(gridContainer) gridContainer.style.display = 'block';
-            if(productContainer) productContainer.style.display = 'none';
-            if(pageTitle) pageTitle.textContent = "Notre Boutique";
-            if(pageSubtitle) {
-                pageSubtitle.textContent = "Découvrez toutes nos créations florales disponibles à Metz";
-                pageSubtitle.style.display = 'block';
-            }
+
+    // ===================================
+    // Check if date is available
+    // ===================================
+    isDateAvailable(dateStr) {
+        // Check appropriate unavailable dates based on current mode
+        if (this.selectedMode === 'local') {
+            return !this.unavailableDates.includes(dateStr);
+        } else if (this.selectedMode === 'pickup') {
+            return !this.unavailablePickupDates.includes(dateStr);
         }
+        return true; // If no mode selected, all dates available
     },
-    
-    /**
-     * Load Single Product Page
-     */
-    async loadSingleProduct(handle) {
-        const container = document.getElementById('product-page-container');
-        if (!container) return;
+
+    // ===================================
+    // Render Custom Calendar
+    // ===================================
+    renderCalendar() {
+        const grid = document.getElementById('calendarDaysGrid');
+        if (!grid) return;
+
+        const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
         
-        // Find product in already loaded products OR fetch it specifically
-        let product = this.products.find(p => p.handle === handle);
-        
-        if (!product) {
-            // Fetch specifically if not in initial list (SEO link case)
-            // Note: Simplification here, assuming we might need to fetch if list is paginated
-            // For now, if not found, we redirect or show error
-             container.innerHTML = `
-                <div class="container text-center">
-                    <h2>Produit introuvable</h2>
-                    <p>Désolé, ce produit n'est plus disponible.</p>
-                    <a href="boutique.html" class="btn btn-primary">Retour à la boutique</a>
-                </div>`;
-             return;
+        // Update header
+        const monthYearEl = document.getElementById('calendarMonthYear');
+        if (monthYearEl) {
+            monthYearEl.textContent = `${monthNames[this.currentCalendarMonth]} ${this.currentCalendarYear}`;
         }
 
-        // Update Breadcrumb
-        this.updateBreadcrumb(product.title);
+        // Get first day of month and number of days
+        const firstDay = new Date(this.currentCalendarYear, this.currentCalendarMonth, 1);
+        const lastDay = new Date(this.currentCalendarYear, this.currentCalendarMonth + 1, 0);
+        const numDays = lastDay.getDate();
+        const startingDayOfWeek = firstDay.getDay();
         
-        // Render Product Page
-        const price = parseFloat(product.priceRange.minVariantPrice.amount);
-        const currency = product.priceRange.minVariantPrice.currencyCode;
-        const formattedPrice = new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(price);
-        
-        const firstVariant = product.variants.edges[0]?.node;
-        const compareAtPrice = firstVariant?.compareAtPriceV2 ? parseFloat(firstVariant.compareAtPriceV2.amount) : null;
-        const hasDiscount = compareAtPrice && compareAtPrice > price;
-        const formattedComparePrice = hasDiscount ? new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(compareAtPrice) : '';
-        
-        const variants = product.variants.edges;
-        const hasVariants = variants.length > 1 || variants[0].node.title !== 'Default Title';
-        const isOutOfStock = variants.every(v => !v.node.availableForSale || (v.node.quantityAvailable !== null && v.node.quantityAvailable <= 0));
-        
-        const images = product.images.edges;
-        
-        // Extract numeric ID from GID for Ymq API call
-        const productId = product.id.split('/').pop();
-        
-        // Render custom options (async, wait for Ymq if needed)
-        const customOptionsHTML = await this.renderCustomOptions(product.handle, productId);
-        
-        container.innerHTML = `
-            <div class="container">
-                <div class="product-page-grid">
-                    <div class="product-gallery">
-                        <div class="product-main-image">
-                            <img src="${images[0]?.node.url}" alt="${product.title}" id="mainImage">
+        // Adjust for Monday start (0 = Monday, 6 = Sunday)
+        const adjustedStartDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        grid.innerHTML = '';
+
+        // Add empty cells for days before month starts
+        for (let i = 0; i < adjustedStartDay; i++) {
+            const emptyCell = document.createElement('div');
+            emptyCell.className = 'calendar-day empty';
+            grid.appendChild(emptyCell);
+        }
+
+        // Add days of month
+        for (let day = 1; day <= numDays; day++) {
+            const date = new Date(this.currentCalendarYear, this.currentCalendarMonth, day);
+            const dateStr = this.formatDateToISO(date);
+            const isPast = date < today;
+            const isSunday = date.getDay() === 0;
+            // Check unavailable dates for local delivery OR pickup
+            const isUnavailable = (this.selectedMode === 'local' || this.selectedMode === 'pickup') && !this.isDateAvailable(dateStr);
+            const isSelected = this.selectedDate === dateStr;
+            const isToday = date.getTime() === today.getTime();
+
+            const dayCell = document.createElement('div');
+            dayCell.className = 'calendar-day';
+            dayCell.textContent = day;
+
+            if (isToday) dayCell.classList.add('today');
+            if (isSelected) dayCell.classList.add('selected');
+            
+            // Disable past dates, Sundays, or unavailable dates
+            if (isPast || isSunday || isUnavailable) {
+                dayCell.classList.add('disabled');
+                if (isSunday) dayCell.title = 'Fermé le dimanche';
+                if (isUnavailable) {
+                    dayCell.title = 'Date indisponible';
+                }
+            } else {
+                dayCell.classList.add('available');
+                dayCell.addEventListener('click', () => {
+                    this.selectDate(dateStr);
+                });
+            }
+
+            grid.appendChild(dayCell);
+        }
+    },
+
+    formatDateToISO(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    },
+
+    selectDate(dateStr) {
+        this.selectedDate = dateStr;
+        const hiddenInput = document.getElementById('deliveryDateInput');
+        if (hiddenInput) hiddenInput.value = dateStr;
+        this.renderCalendar(); // Re-render to show selection
+        this.validateDate();
+        this.updateSummary();
+    },
+
+    // ===================================
+    // Create Delivery Panel HTML
+    // ===================================
+    createDeliveryPanel() {
+        if (document.getElementById('deliveryOverlay')) return;
+
+        const today = new Date();
+        const minDate = new Date(today);
+        minDate.setDate(minDate.getDate() + 1); // minimum demain pour France/international
+        const minDateLocal = today.toISOString().split('T')[0]; // aujourd'hui pour retrait
+        const minDateStr = minDate.toISOString().split('T')[0];
+        const maxDate = new Date(today);
+        maxDate.setMonth(maxDate.getMonth() + 2);
+        const maxDateStr = maxDate.toISOString().split('T')[0];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'deliveryOverlay';
+        overlay.className = 'delivery-overlay';
+        overlay.innerHTML = `
+            <div class="delivery-backdrop"></div>
+            <div class="delivery-panel">
+                <div class="delivery-panel-header">
+                    <button class="delivery-mobile-back"><i class="fas fa-arrow-left"></i> Retour</button>
+                    <h3><i class="fas fa-truck"></i> Options de livraison</h3>
+                    <span class="delivery-header-spacer"></span>
+                    <button class="delivery-close"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="delivery-panel-body">
+                    <div class="delivery-steps">
+                        <div class="delivery-step-indicator active" data-step="1">
+                            <span class="step-num">1</span>
+                            <span>Mode</span>
                         </div>
-                        ${images.length > 1 ? `
-                            <div class="product-thumbnails">
-                                ${images.map((edge, i) => `
-                                    <div class="product-thumbnail ${i === 0 ? 'active' : ''}" onclick="ShopifyIntegration.switchImage(this, '${edge.node.url}')">
-                                        <img src="${edge.node.url}" alt="${product.title}">
-                                    </div>
-                                `).join('')}
-                            </div>
-                        ` : ''}
+                        <div class="step-connector"></div>
+                        <div class="delivery-step-indicator" data-step="2">
+                            <span class="step-num">2</span>
+                            <span>Date</span>
+                        </div>
+                        <div class="step-connector"></div>
+                        <div class="delivery-step-indicator" data-step="3">
+                            <span class="step-num">3</span>
+                            <span>Récap</span>
+                        </div>
                     </div>
-                    
-                    <div class="product-details-content">
-                        <h1>${product.title}</h1>
-                        <div class="product-details-price">
-                            ${hasDiscount ? `<span class="price-compare">${formattedComparePrice}</span>` : ''}
-                            <span class="price-current" data-base-price="${price}">${formattedPrice}</span>
+
+                    <div class="delivery-options">
+                        <div class="delivery-option" data-mode="local">
+                            <div class="delivery-option-radio"></div>
+                            <div class="delivery-option-content">
+                                <h4>
+                                    <i class="fas fa-motorcycle"></i>
+                                    Livraison par My Flowers
+                                </h4>
+                                <p>Livraison par nos soins dans un rayon de 50 km autour de Metz. Gratuit dans le secteur de Metz !</p>
+                            </div>
+                            <div class="delivery-option-price free">Dès 0 €</div>
                         </div>
-                        
-                        <div class="product-description-full">
-                            ${product.description}
-                        </div>
-                        
-                        <div class="product-form">
-                             ${hasVariants ? `
-                                <div class="variant-selector">
-                                    ${this.createVariantSelector(variants, product.handle)}
+
+                        <div class="delivery-option" data-mode="france">
+                            <div class="delivery-option-radio"></div>
+                            <div class="delivery-option-content">
+                                <h4>
+                                    <i class="fas fa-shipping-fast"></i>
+                                    Livraison France (GLS)
+                                    <span class="delivery-badge express" title="Délai compté à partir de l'expédition du colis">24-48h après expédition*</span>
+                                </h4>
+                                <p>Livraison partout en France métropolitaine.</p>
+                                <p style="font-size:0.75rem;color:#999;margin-top:0.25rem;margin-bottom:0;">*Hors week-ends et jours fériés</p>
+                                <div class="gls-suboptions" id="glsSuboptions">
+                                    <label class="gls-suboption selected" data-sub="domicile">
+                                        <input type="radio" name="glsMode" value="domicile" checked>
+                                        <span><strong>À domicile</strong> — 15,00 €</span>
+                                    </label>
+                                    <label class="gls-suboption" data-sub="relais">
+                                        <input type="radio" name="glsMode" value="relais">
+                                        <span><strong>Point relais</strong> — 10,00 €</span>
+                                    </label>
                                 </div>
-                            ` : ''}
-                            
-                            ${customOptionsHTML}
-                            
-                            <div class="add-to-cart-area">
-                                ${isOutOfStock ? `
-                                <button class="btn btn-lg" style="flex:1; background:#ccc; color:#666; cursor:not-allowed; border:none; padding:14px 24px; border-radius:12px; font-size:1rem; display:flex; align-items:center; justify-content:center; gap:8px;" disabled>
-                                    <i class="fas fa-ban"></i>
-                                    <span>Rupture de stock</span>
-                                </button>
-                                ` : `
-                                <div class="quantity-input-group">
-                                    <button class="quantity-btn" onclick="this.nextElementSibling.stepDown()"><i class="fas fa-minus"></i></button>
-                                    <input type="number" value="1" min="1" class="quantity-input" id="pageQuantity">
-                                    <button class="quantity-btn" onclick="this.previousElementSibling.stepUp()"><i class="fas fa-plus"></i></button>
+                                <div id="relaisInfoMessage" style="display: none; background: #E3F2FD; border-left: 4px solid #2196F3; padding: 0.75rem; border-radius: 4px; margin-top: 0.75rem; font-size: 0.85rem; color: #1565C0;">
+                                    <i class="fas fa-info-circle"></i> <strong>Le choix du point relais se fait après paiement.</strong>
                                 </div>
-                                <button class="btn btn-primary btn-lg" style="flex:1;" onclick="ShopifyIntegration.addToCartFromPage('${product.handle}')">
-                                    <i class="fas fa-shopping-bag"></i>
-                                    <span>Ajouter au panier</span>
+                                <div class="gls-address-section" id="glsAddressSection" style="display: none; margin-top: 1rem;">
+                                    <label style="font-size: 0.9rem; font-weight: 600; color: #5A5A5A; display: block; margin-bottom: 0.5rem;">
+                                        <i class="fas fa-map-marker-alt"></i> Adresse de livraison
+                                    </label>
+                                    <input type="text" id="glsAddressName" placeholder="Nom complet" style="width: 100%; padding: 0.65rem; border: 2px solid #E0E0E0; border-radius: 8px; font-size: 0.95rem; margin-bottom: 0.5rem; font-family: inherit;">
+                                    <input type="text" id="glsAddressStreet" placeholder="Adresse (numéro et rue)" style="width: 100%; padding: 0.65rem; border: 2px solid #E0E0E0; border-radius: 8px; font-size: 0.95rem; margin-bottom: 0.5rem; font-family: inherit;">
+                                    <div id="glsAddressSuggestions" style="display: none; position: absolute; background: white; border: 1px solid #E0E0E0; border-top: none; border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto; z-index: 1000; width: 100%; margin-top: -0.5rem; margin-bottom: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <input type="text" id="glsAddressZip" placeholder="Code postal" style="width: 35%; padding: 0.65rem; border: 2px solid #E0E0E0; border-radius: 8px; font-size: 0.95rem; font-family: inherit;">
+                                        <input type="text" id="glsAddressCity" placeholder="Ville" style="width: 65%; padding: 0.65rem; border: 2px solid #E0E0E0; border-radius: 8px; font-size: 0.95rem; font-family: inherit;">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="delivery-option-price">10 - 15 €</div>
+                        </div>
+
+                        <div class="delivery-option" data-mode="pickup">
+                            <div class="delivery-option-radio"></div>
+                            <div class="delivery-option-content">
+                                <h4>
+                                    <i class="fas fa-store"></i>
+                                    Retrait en boutique
+                                </h4>
+                                <p>Récupérez votre commande au 21 Rue Lafayette, 57000 Metz. <br>Lun-Ven : 10h-12h / 14h-19h | Sam : 9h30-19h</p>
+                            </div>
+                            <div class="delivery-option-price free">Gratuit</div>
+                        </div>
+                    </div>
+
+                    <div class="delivery-address-section" id="localAddressSection">
+                        <label style="font-size: 0.9rem; font-weight: 600; color: #5A5A5A; display: block; margin-bottom: 0.75rem;">
+                            <i class="fas fa-map-marker-alt"></i> Adresse de livraison
+                        </label>
+                        <input type="text" id="deliveryAddressName" placeholder="Nom complet" style="width: 100%; padding: 0.65rem; border: 2px solid #E0E0E0; border-radius: 8px; font-size: 0.95rem; margin-bottom: 0.5rem; font-family: inherit;">
+                        <div style="position: relative;">
+                            <input type="text" id="deliveryAddressInput" placeholder="Adresse (numéro et rue)" autocomplete="off" style="width: 100%; padding: 0.65rem; border: 2px solid #E0E0E0; border-radius: 8px; font-size: 0.95rem; margin-bottom: 0.5rem; font-family: inherit;">
+                            <div id="localAddressSuggestions" style="display: none; position: absolute; background: white; border: 1px solid #E0E0E0; border-top: none; border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto; z-index: 1000; width: 100%; margin-top: -0.5rem; margin-bottom: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                            <input type="text" id="deliveryAddressZip" placeholder="Code postal" maxlength="5" pattern="[0-9]{5}" style="width: 35%; padding: 0.65rem; border: 2px solid #E0E0E0; border-radius: 8px; font-size: 0.95rem; font-family: inherit;">
+                            <input type="text" id="deliveryAddressCity" placeholder="Ville" style="width: 65%; padding: 0.65rem; border: 2px solid #E0E0E0; border-radius: 8px; font-size: 0.95rem; font-family: inherit;">
+                        </div>
+                        <div class="address-loader" id="addressLoader"><i class="fas fa-spinner fa-spin"></i> Vérification de l'adresse...</div>
+                        <div class="distance-result" id="distanceResult"></div>
+                    </div>
+
+                    <div class="delivery-date-section" style="display: none;">
+                        <label><i class="fas fa-calendar-alt"></i> Date de livraison souhaitée</label>
+                        <div class="custom-calendar-wrapper">
+                            <div class="calendar-header">
+                                <button type="button" id="prevMonthBtn" class="calendar-nav-btn">
+                                    <i class="fas fa-chevron-left"></i>
                                 </button>
-                                `}
+                                <div class="calendar-month-year" id="calendarMonthYear">Février 2026</div>
+                                <button type="button" id="nextMonthBtn" class="calendar-nav-btn">
+                                    <i class="fas fa-chevron-right"></i>
+                                </button>
                             </div>
+                            <div class="calendar-weekdays">
+                                <div class="calendar-weekday">Lun</div>
+                                <div class="calendar-weekday">Mar</div>
+                                <div class="calendar-weekday">Mer</div>
+                                <div class="calendar-weekday">Jeu</div>
+                                <div class="calendar-weekday">Ven</div>
+                                <div class="calendar-weekday">Sam</div>
+                                <div class="calendar-weekday">Dim</div>
+                            </div>
+                            <div class="calendar-days-grid" id="calendarDaysGrid">
+                                </div>
+                            <input type="hidden" id="deliveryDateInput">
                         </div>
-                        
-                        <div class="product-meta">
-                            <div class="meta-item">
-                                <i class="fas fa-truck"></i>
-                                <span>Expédition en France</span>
-                            </div>
-                            <div class="meta-item">
-                                <i class="fas fa-map-marker-alt"></i>
-                                <span>Livraison Metz & alentours</span>
-                            </div>
-                            <div class="meta-item">
-                                <i class="fas fa-store"></i>
-                                <span>Retrait en boutique</span>
-                            </div>
-                            <div class="meta-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span>Paiement sécurisé</span>
-                            </div>
+                        <div class="date-hint" id="dateHint">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Sélectionnez d'abord un mode de livraison</span>
                         </div>
+                    </div>
+
+                    <div class="delivery-summary" id="deliverySummary" style="display:none;">
+                        <h4><i class="fas fa-receipt"></i> Récapitulatif</h4>
+                        <div class="summary-row">
+                            <span>Sous-total</span>
+                            <span class="summary-value" id="summarySubtotal">0,00 €</span>
+                        </div>
+                        <div class="summary-row">
+                            <span id="summaryDeliveryLabel">Livraison</span>
+                            <span class="summary-value" id="summaryDeliveryPrice">—</span>
+                        </div>
+                        <div class="summary-row">
+                            <span id="summaryDateLabel">Date souhaitée</span>
+                            <span class="summary-value" id="summaryDate">—</span>
+                        </div>
+                        <div class="summary-row total">
+                            <span>Total estimé</span>
+                            <span class="summary-value" id="summaryTotal">0,00 €</span>
+                        </div>
+                    </div>
+
+                    <div class="delivery-actions">
+                        <button class="btn btn-secondary" id="deliveryBack">
+                            <i class="fas fa-arrow-left"></i>
+                            <span>Retour</span>
+                        </button>
+                        <button class="btn btn-primary" id="deliveryConfirm" disabled>
+                            <span>Valider et payer</span>
+                            <i class="fas fa-lock"></i>
+                        </button>
                     </div>
                 </div>
             </div>
         `;
-        
-        // Store current product handle for dynamic updates
-        this._currentProductHandle = product.handle;
 
-        // Ajouter les événements pour les ronds de couleur + update add-to-cart button
-        setTimeout(() => {
-            const colorButtons = document.querySelectorAll('.color-button');
-            colorButtons.forEach(button => {
-                button.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (button.disabled) return;
-                    colorButtons.forEach(b => b.classList.remove('selected'));
-                    button.classList.add('selected');
-                    this.updateAddToCartButton();
+        document.body.appendChild(overlay);
+    },
+
+    // ===================================
+    // Bind Events
+    // ===================================
+    bindEvents() {
+        const overlay = document.getElementById('deliveryOverlay');
+        if (!overlay) return;
+
+        // Close
+        overlay.querySelector('.delivery-backdrop').addEventListener('click', () => this.close());
+        overlay.querySelector('.delivery-close').addEventListener('click', () => this.close());
+        overlay.querySelector('.delivery-mobile-back').addEventListener('click', () => this.close());
+
+        // Delivery mode selection
+        overlay.querySelectorAll('.delivery-option').forEach(option => {
+            option.addEventListener('click', (e) => {
+                // Don't trigger if clicking sub-options
+                if (e.target.closest('.gls-suboptions')) return;
+                this.selectMode(option.dataset.mode);
+            });
+        });
+
+        // GLS sub-options
+        overlay.querySelectorAll('.gls-suboption').forEach(sub => {
+            sub.addEventListener('click', () => {
+                overlay.querySelectorAll('.gls-suboption').forEach(s => s.classList.remove('selected'));
+                sub.classList.add('selected');
+                sub.querySelector('input').checked = true;
+                this.selectedSubMode = sub.dataset.sub;
+                this.updateGlsAddressVisibility();
+                this.updatePricing();
+            });
+        });
+
+        // Address input (debounced) - compose from separate fields
+        let addressTimeout;
+        const addressFields = ['deliveryAddressInput', 'deliveryAddressZip', 'deliveryAddressCity'];
+        addressFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.addEventListener('input', () => {
+                    clearTimeout(addressTimeout);
+                    addressTimeout = setTimeout(() => {
+                        const street = document.getElementById('deliveryAddressInput')?.value || '';
+                        const zip = document.getElementById('deliveryAddressZip')?.value || '';
+                        const city = document.getElementById('deliveryAddressCity')?.value || '';
+                        const fullAddress = `${street}, ${zip} ${city}`.trim();
+                        if (street.length >= 3 && zip.length >= 4 && city.length >= 2) {
+                            this.calculateDistance(fullAddress);
+                        }
+                    }, 800);
                 });
-            });
-
-            // Also listen on select dropdowns
-            document.querySelectorAll('.variant-select').forEach(select => {
-                select.addEventListener('change', () => this.updateAddToCartButton());
-            });
-
-            // Auto-select the first available variant
-            const firstAvailable = document.querySelector('.color-button:not([disabled])');
-            if (firstAvailable && !firstAvailable.classList.contains('selected')) {
-                colorButtons.forEach(b => b.classList.remove('selected'));
-                firstAvailable.classList.add('selected');
             }
+        });
 
-            // Initial check
-            this.updateAddToCartButton();
+        // GLS address street input with autocomplete
+        const glsAddressStreet = document.getElementById('glsAddressStreet');
+        if (glsAddressStreet) {
+            glsAddressStreet.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                this.searchAddressAPI(query, 'glsAddressSuggestions');
+            });
+            
+            // Hide suggestions when clicking outside
+            glsAddressStreet.addEventListener('blur', () => {
+                setTimeout(() => {
+                    const suggestionsDiv = document.getElementById('glsAddressSuggestions');
+                    if (suggestionsDiv) suggestionsDiv.style.display = 'none';
+                }, 150);
+            });
+        }
 
-            // Initialiser le prix avec la valeur par défaut du variant-select
-            const variantSelect = document.querySelector('.custom-select[data-option]');
-            if (variantSelect && typeof ProductOptions !== 'undefined') {
-                ProductOptions.updateVariantSelect(variantSelect, product.handle);
+        // GLS zip & city: validate France in real time
+        ['glsAddressZip', 'glsAddressCity', 'deliveryAddressZip'].forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.addEventListener('input', () => this.updateSummary());
             }
-        }, 100);
+        });
+
+        // LOCAL address street input with autocomplete
+        const localAddressInput = document.getElementById('deliveryAddressInput');
+        if (localAddressInput) {
+            localAddressInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                this.searchAddressAPI(query, 'localAddressSuggestions');
+            });
+            
+            // Hide suggestions when clicking outside
+            localAddressInput.addEventListener('blur', () => {
+                setTimeout(() => {
+                    const suggestionsDiv = document.getElementById('localAddressSuggestions');
+                    if (suggestionsDiv) suggestionsDiv.style.display = 'none';
+                }, 150);
+            });
+        }
+
+        // Calendar navigation buttons
+        const prevMonthBtn = document.getElementById('prevMonthBtn');
+        const nextMonthBtn = document.getElementById('nextMonthBtn');
+        if (prevMonthBtn) {
+            prevMonthBtn.addEventListener('click', () => {
+                this.currentCalendarMonth--;
+                if (this.currentCalendarMonth < 0) {
+                    this.currentCalendarMonth = 11;
+                    this.currentCalendarYear--;
+                }
+                this.renderCalendar();
+            });
+        }
+        if (nextMonthBtn) {
+            nextMonthBtn.addEventListener('click', () => {
+                this.currentCalendarMonth++;
+                if (this.currentCalendarMonth > 11) {
+                    this.currentCalendarMonth = 0;
+                    this.currentCalendarYear++;
+                }
+                this.renderCalendar();
+            });
+        }
+
+        // Back button
+        document.getElementById('deliveryBack').addEventListener('click', () => this.close());
+
+        // Confirm button
+        document.getElementById('deliveryConfirm').addEventListener('click', () => this.confirm());
     },
 
-    /**
-     * Dynamically update the Add to Cart button based on selected variant availability
-     */
-    updateAddToCartButton() {
-        const handle = this._currentProductHandle;
-        if (!handle) return;
-        const product = this.products.find(p => p.handle === handle);
-        if (!product) return;
+    updateGlsAddressVisibility() {
+        const glsAddressSection = document.getElementById('glsAddressSection');
+        const relaisInfoMessage = document.getElementById('relaisInfoMessage');
+        if (!glsAddressSection) return;
 
-        const selectedVariant = this.getSelectedVariant(product);
-        const isOOS = !selectedVariant.availableForSale || (selectedVariant.quantityAvailable !== null && selectedVariant.quantityAvailable <= 0);
-
-        const area = document.querySelector('.add-to-cart-area');
-        if (!area) return;
-
-        if (isOOS) {
-            area.innerHTML = `
-                <button class="btn btn-lg" style="flex:1; background:#ccc; color:#666; cursor:not-allowed; border:none; padding:14px 24px; border-radius:12px; font-size:1rem; display:flex; align-items:center; justify-content:center; gap:8px;" disabled>
-                    <i class="fas fa-ban"></i>
-                    <span>Rupture de stock</span>
-                </button>`;
-        } else {
-            area.innerHTML = `
-                <div class="quantity-input-group">
-                    <button class="quantity-btn" onclick="this.nextElementSibling.stepDown()"><i class="fas fa-minus"></i></button>
-                    <input type="number" value="1" min="1" class="quantity-input" id="pageQuantity">
-                    <button class="quantity-btn" onclick="this.previousElementSibling.stepUp()"><i class="fas fa-plus"></i></button>
-                </div>
-                <button class="btn btn-primary btn-lg" style="flex:1;" onclick="ShopifyIntegration.addToCartFromPage('${handle}')">
-                    <i class="fas fa-shopping-bag"></i>
-                    <span>Ajouter au panier</span>
-                </button>`;
+        // Show address fields ONLY for domicile mode (not for point relais)
+        // Point relais: user will select the relay point after payment, no address needed
+        const requiresAddress = this.selectedMode === 'france' && this.selectedSubMode === 'domicile';
+        glsAddressSection.style.display = requiresAddress ? 'block' : 'none';
+        
+        // Show relais info message when relais is selected
+        if (relaisInfoMessage) {
+            const showRelaisMessage = this.selectedMode === 'france' && this.selectedSubMode === 'relais';
+            relaisInfoMessage.style.display = showRelaisMessage ? 'block' : 'none';
         }
     },
-    
-    /**
-     * Update Breadcrumb
-     */
-    updateBreadcrumb(productTitle) {
-        const container = document.getElementById('breadcrumb-container');
-        if(!container) return;
+
+    // ===================================
+    // Open Delivery Panel
+    // ===================================
+    open(cartSubtotal) {
+        this.cartSubtotal = cartSubtotal || 0;
         
-        // Récupérer les paramètres URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const filterParam = urlParams.get('filter');
+        // Reload unavailable dates before showing panel
+        this.loadUnavailableDates();
         
-        // Déterminer le nom de la catégorie et le lien
-        let categoryLink = 'boutique.html';
-        let categoryName = 'Tous les produits';
+        this.reset();
         
-        if (filterParam && filterParam !== 'all') {
-            if (filterParam.startsWith('collection:')) {
-                const handle = filterParam.replace('collection:', '');
-                categoryLink = `boutique.html?filter=${filterParam}`;
-                // Récupérer le nom de la collection
-                const collection = this.collections.find(c => c.handle === handle);
-                categoryName = collection ? collection.title : handle;
+        // Pre-fill with logged-in user's account information
+        this.prefillFromUserAccount();
+        
+        const overlay = document.getElementById('deliveryOverlay');
+        if (overlay) {
+            overlay.classList.add('active');
+            if (window.innerWidth > 768) {
+                document.body.style.overflow = 'hidden';
             } else {
-                categoryLink = `boutique.html?filter=${filterParam}`;
-                // Mapping des noms de catégories
-                const categoryNames = {
-                    'bouquets': 'Bouquets',
-                    'peluches': 'Peluches',
-                    'plantes': 'Plantes',
-                    'nouveautés': 'Nouveautés',
-                    'promotions': 'Promotions'
-                };
-                categoryName = categoryNames[filterParam.toLowerCase()] || filterParam;
+                // Mobile : masquer la scrollbar du body sans bloquer le scroll du panel
+                document.documentElement.style.overflow = 'hidden';
+                document.body.style.overflow = 'hidden';
             }
         }
-        
-        container.innerHTML = `
-            <a href="index.html"><i class="fas fa-home"></i> Accueil</a>
-            <span>/</span>
-            <a href="boutique.html">Boutique</a>
-            <span>/</span>
-            ${filterParam ? `<a href="${categoryLink}">${categoryName}</a>` : ''}
-            ${filterParam ? `<span>/</span>` : ''}
-            <span>${productTitle}</span>
-        `;
-    },
-    
-    /**
-     * Switch Gallery Image
-     */
-    switchImage(thumb, url) {
-        document.getElementById('mainImage').src = url;
-        document.querySelectorAll('.product-thumbnail').forEach(t => t.classList.remove('active'));
-        thumb.classList.add('active');
-    },
-    
-    /**
-     * Get Selected Variant based on current DOM selections
-     */
-    getSelectedVariant(product) {
-        const variants = product.variants.edges;
-        
-        // If only one variant, return it directly
-        if (variants.length === 1) {
-            return variants[0].node;
-        }
-        
-        // Collect selected options from the DOM
-        const selectedOptions = {};
-        
-        // Color buttons (round selectors)
-        document.querySelectorAll('.color-button.selected').forEach(btn => {
-            const optionName = btn.dataset.option;
-            const optionValue = btn.dataset.value;
-            if (optionName && optionValue) {
-                selectedOptions[optionName] = optionValue;
-            }
-        });
-        
-        // Dropdown selects (variant-select ET custom-select pour notre système)
-        document.querySelectorAll('.variant-select, .custom-select[data-option]').forEach(select => {
-            const optionName = select.dataset.option;
-            const optionValue = select.value;
-            if (optionName && optionValue) {
-                selectedOptions[optionName] = optionValue;
-            }
-        });
-        
-        // Find the variant matching all selected options
-        const matchedVariant = variants.find(edge => {
-            return edge.node.selectedOptions.every(opt => {
-                if (selectedOptions[opt.name] === undefined) return true;
-                return selectedOptions[opt.name] === opt.value;
-            });
-        });
-        
-        return matchedVariant ? matchedVariant.node : variants[0].node;
     },
 
-    /**
-     * Add to Cart from Page
-     */
-    addToCartFromPage(handle) {
-        const product = this.products.find(p => p.handle === handle);
-        if(!product) return;
-        
-        // Validate custom options if product has them
-        if (typeof ProductOptions !== 'undefined' && ProductOptions.hasOptions(handle)) {
-            if (!ProductOptions.validateOptions(handle)) {
-                return;
+    // Pre-fill delivery panel with logged-in user's stored address
+    prefillFromUserAccount() {
+        try {
+            const userStr = localStorage.getItem('fleuriste_user');
+            if (!userStr) return;
+            
+            const user = JSON.parse(userStr);
+            if (!user) return;
+            
+            // Try to get addresses from dashboard storage
+            let addressToUse = null;
+            const addressesStr = localStorage.getItem('fleuriste_addresses_' + user.id);
+            if (addressesStr) {
+                const addresses = JSON.parse(addressesStr);
+                if (addresses && addresses.length > 0) {
+                    // Get the default address, or the first one
+                    addressToUse = addresses.find(a => a.isDefault) || addresses[0];
+                }
             }
+            
+            // Fallback to user.defaultAddress from Shopify if available
+            if (!addressToUse && user.defaultAddress) {
+                addressToUse = user.defaultAddress;
+            }
+            
+            if (!addressToUse) return;
+            
+            const addr = addressToUse;
+            const overlay = document.getElementById('deliveryOverlay');
+            if (!overlay) return;
+            
+            // Pre-fill name
+            const nameField = document.getElementById('glsAddressName');
+            if (nameField && (addr.firstName || user.firstName) && (addr.lastName || user.lastName)) {
+                nameField.value = `${addr.firstName || user.firstName} ${addr.lastName || user.lastName}`;
+            }
+            
+            // Pre-fill address - handle both address1 and street properties
+            const streetField = document.getElementById('glsAddressStreet');
+            if (streetField && (addr.address1 || addr.street)) {
+                streetField.value = addr.address1 || addr.street;
+            }
+            
+            // Pre-fill zip - handle both zip and postalCode properties
+            const zipField = document.getElementById('glsAddressZip');
+            if (zipField && (addr.zip || addr.postalCode)) {
+                zipField.value = addr.zip || addr.postalCode;
+            }
+            
+            // Pre-fill city
+            const cityField = document.getElementById('glsAddressCity');
+            if (cityField && addr.city) {
+                cityField.value = addr.city;
+            }
+            
+            // Pre-select GLS Domicile mode if address exists
+            const streetVal = addr.address1 || addr.street;
+            const zipVal = addr.zip || addr.postalCode;
+            if (streetVal && zipVal && addr.city) {
+                const glsDomicileOption = overlay.querySelector('[data-mode="france"]');
+                if (glsDomicileOption) {
+                    glsDomicileOption.classList.add('selected');
+                    overlay.querySelectorAll('[data-mode]').forEach(o => {
+                        if (o !== glsDomicileOption) o.classList.remove('selected');
+                    });
+                    
+                    // Set the domicile sub-option as selected
+                    const domicileSuboption = overlay.querySelector('.gls-suboption[data-sub="domicile"]');
+                    if (domicileSuboption) {
+                        overlay.querySelectorAll('.gls-suboption').forEach(s => s.classList.remove('selected'));
+                        domicileSuboption.classList.add('selected');
+                        domicileSuboption.querySelector('input').checked = true;
+                    }
+                    
+                    this.selectMode('france');
+                    this.selectedSubMode = 'domicile';
+                    this.updateGlsAddressVisibility();
+                    this.updatePricing();
+                }
+            }
+        } catch (e) {
+            console.warn('Could not prefill from user account:', e);
         }
+    },
+
+    // ===================================
+    // Address Autocomplete Search
+    // ===================================
+    async searchAddressAPI(query, suggestionsDivId = 'glsAddressSuggestions') {
+        const suggestionsDiv = document.getElementById(suggestionsDivId);
         
-        // Utiliser le variantId stocké par ProductOptions si disponible (ex: Nombre de roses)
-        let selectedVariant = null;
-        if (typeof ProductOptions !== 'undefined' && ProductOptions._selectedVariantIds?.[handle]) {
-            const vid = ProductOptions._selectedVariantIds[handle];
-            selectedVariant = product.variants.edges
-                .map(e => e.node)
-                .find(v => String(v.id).includes(vid) || String(v.id).endsWith('/' + vid));
-        }
-        if (!selectedVariant) {
-            selectedVariant = this.getSelectedVariant(product);
-        }
-        
-        // Vérifier si le variant sélectionné est en rupture de stock
-        if (!selectedVariant.availableForSale || (selectedVariant.quantityAvailable !== null && selectedVariant.quantityAvailable <= 0)) {
-            this.showNotification('❌ Ce produit est en rupture de stock', 'error');
+        if (!query || query.length < 3) {
+            if (suggestionsDiv) suggestionsDiv.style.display = 'none';
             return;
         }
-        
-        const quantity = parseInt(document.getElementById('pageQuantity').value) || 1;
-        
-        // Get custom options if any
-        let customOptions = null;
-        if (typeof ProductOptions !== 'undefined' && ProductOptions.hasOptions(handle)) {
-            customOptions = ProductOptions.formatOptionsForCart(handle);
-        }
-        
-        this.addToCart(selectedVariant.id, quantity, customOptions);
-    },
 
-    /**
-     * Collections data
-     */
-    collections: [],
-    collectionProductIds: {},
-    
-    /**
-     * Fetch Collections from Shopify Storefront API
-     */
-    async fetchCollections() {
-        const query = `
-            query {
-                collections(first: 50) {
-                    edges {
-                        node {
-                            id
-                            title
-                            handle
-                            description
-                            image {
-                                url
-                            }
-                            products(first: 250) {
-                                edges {
-                                    node {
-                                        id
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        `;
-        
         try {
-            const response = await this.graphqlRequest(query);
-            let collections = response.data.collections.edges.map(edge => edge.node);
+            const response = await fetch(
+                `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=8`
+            );
+            const data = await response.json();
             
-            // Fetch boutique config to filter hidden collections
-            try {
-                const configRes = await fetch('https://myflowers-shop.fr/api/boutique-config');
-                const config = await configRes.json();
-                const hiddenIds = config.hiddenCollections || [];
-                this.featuredCollections = config.featuredCollections || [];
-                this.hiddenProducts = config.hiddenProducts || [];
-                this.featuredProducts = config.featuredProducts || [];
-                this.collectionIcons = config.collectionIcons || {};
-                this.collectionProductOrders = config.collectionProductOrders || {};
+            if (!suggestionsDiv) return;
+            
+            if (data.features && data.features.length > 0) {
+                suggestionsDiv.innerHTML = data.features.map((feature, index) => {
+                    const props = feature.properties;
+                    const address = `${props.name || ''} ${props.postcode || ''} ${props.city || ''}`;
+                    return `
+                        <div style="padding: 0.75rem; border-bottom: 1px solid #F0F0F0; cursor: pointer; font-size: 0.9rem; color: #333;" 
+                             data-index="${index}" 
+                             data-street="${props.name || ''}" 
+                             data-zip="${props.postcode || ''}" 
+                             data-city="${props.city || ''}"
+                             data-target="${suggestionsDivId === 'localAddressSuggestions' ? 'local' : 'gls'}"
+                             onmouseover="this.style.backgroundColor='#F5F5F5'"
+                             onmouseout="this.style.backgroundColor='transparent'">
+                            <strong>${props.name || ''}</strong><br>
+                            <small style="color: #888;">${props.postcode || ''} ${props.city || ''}</small>
+                        </div>
+                    `;
+                }).join('');
                 
-                if (hiddenIds.length > 0) {
-                    collections = collections.filter(c => {
-                        // GID format: gid://shopify/Collection/12345 → extract numeric id
-                        const numericId = c.id.split('/').pop();
-                        return !hiddenIds.includes(numericId);
+                suggestionsDiv.style.display = 'block';
+                
+                // Add click listeners to suggestions
+                suggestionsDiv.querySelectorAll('div[data-index]').forEach(item => {
+                    item.addEventListener('mousedown', (e) => {
+                        e.preventDefault(); // Prevent blur from hiding before click
+                        this.selectAddressFromSuggestion(
+                            item.dataset.street,
+                            item.dataset.zip,
+                            item.dataset.city,
+                            item.dataset.target
+                        );
                     });
-                }
-            } catch (e) {
-                // Backend not available, show all collections
-                this.featuredCollections = [];
-                this.hiddenProducts = [];
-                this.featuredProducts = [];
-                this.collectionIcons = {};
-                this.collectionProductOrders = {};
+                });
+            } else {
+                suggestionsDiv.style.display = 'none';
             }
-            
-            this.collections = collections;
-            
-            // Build a map of collection handle -> product IDs for fast filtering
-            this.collectionProductIds = {};
-            this.collections.forEach(collection => {
-                this.collectionProductIds[collection.handle] = 
-                    collection.products.edges.map(edge => edge.node.id);
-            });
-
-            // Populate mobile nav submenu
-            this.populateNavSubmenu();
         } catch (error) {
-            console.error('❌ Erreur chargement collections:', error);
-            this.collections = [];
+            console.warn('Address search error:', error);
+            if (suggestionsDiv) suggestionsDiv.style.display = 'none';
         }
     },
 
-    /**
-     * Populate the Boutique submenu in mobile nav with collection links
-     */
-    populateNavSubmenu() {
-        const submenu = document.getElementById('boutiqueSubmenu');
-        if (!submenu || this.collections.length === 0) return;
-
-        // Same icon logic as displayHomepageCollections
-        const iconMap = {
-            'bouquet': 'fa-spa', 'rose': 'fa-gem', 'éternelle': 'fa-gem', 'eternelle': 'fa-gem',
-            'kinder': 'fa-gift', 'box': 'fa-gift', 'coffret': 'fa-gift',
-            'peluche': 'fa-heart', 'teddy': 'fa-heart',
-            'accessoire': 'fa-ring', 'plante': 'fa-leaf',
-            'composition': 'fa-seedling', 'mariage': 'fa-rings-wedding',
-        };
-
-        const self = this;
-        function getIcon(collection) {
-            const numericId = collection.id.split('/').pop();
-            if (self.collectionIcons && self.collectionIcons[numericId]) {
-                return 'fas ' + self.collectionIcons[numericId];
-            }
-            const lower = collection.title.toLowerCase();
-            for (const [kw, icon] of Object.entries(iconMap)) {
-                if (lower.includes(kw)) return 'fas ' + icon;
-            }
-            return 'fas fa-tag';
+    selectAddressFromSuggestion(street, zip, city, target = 'gls') {
+        let streetField, zipField, cityField, suggestionsDiv;
+        
+        if (target === 'local') {
+            // Local delivery fields
+            streetField = document.getElementById('deliveryAddressInput');
+            zipField = document.getElementById('deliveryAddressZip');
+            cityField = document.getElementById('deliveryAddressCity');
+            suggestionsDiv = document.getElementById('localAddressSuggestions');
+        } else {
+            // GLS fields
+            streetField = document.getElementById('glsAddressStreet');
+            zipField = document.getElementById('glsAddressZip');
+            cityField = document.getElementById('glsAddressCity');
+            suggestionsDiv = document.getElementById('glsAddressSuggestions');
         }
+        
+        if (streetField) streetField.value = street;
+        if (zipField) zipField.value = zip;
+        if (cityField) cityField.value = city;
+        if (suggestionsDiv) suggestionsDiv.style.display = 'none';
+        
+        // Trigger validation/distance calculation
+        this.deliveryAddress = `${street}, ${zip} ${city}`;
+        if (this.selectedMode === 'local' || target === 'local') {
+            this.calculateDistance(this.deliveryAddress);
+        }
+    },
 
-        let html = `<li><a href="boutique.html"><i class="fas fa-th-large"></i> Tout voir</a></li>`;
+    // ===================================
+    // Close Delivery Panel
+    // ===================================
+    close() {
+        const overlay = document.getElementById('deliveryOverlay');
+        if (overlay) {
+            overlay.classList.remove('active');
+            if (window.innerWidth > 768) {
+                document.body.style.overflow = '';
+            } else {
+                document.documentElement.style.overflow = '';
+                document.body.style.overflow = '';
+            }
+        }
+    },
 
-        this.collections.forEach(collection => {
-            const icon = getIcon(collection);
-            html += `<li><a href="boutique.html?filter=collection:${collection.handle}"><i class="${icon}"></i> ${collection.title}</a></li>`;
+    // ===================================
+    // Reset State
+    // ===================================
+    reset() {
+        this.selectedMode = null;
+        this.selectedSubMode = 'domicile';
+        this.deliveryAddress = '';
+        this.deliveryDistance = null;
+        this.deliveryPrice = null;
+        this.selectedDate = null;
+        
+        // Reset calendar to current month
+        this.currentCalendarMonth = new Date().getMonth();
+        this.currentCalendarYear = new Date().getFullYear();
+
+        const overlay = document.getElementById('deliveryOverlay');
+        if (!overlay) return;
+
+        overlay.querySelectorAll('.delivery-option').forEach(o => o.classList.remove('selected'));
+        document.getElementById('localAddressSection').classList.remove('visible');
+        document.getElementById('glsSuboptions').classList.remove('visible');
+        const glsAddr = document.getElementById('glsAddressSection');
+        if (glsAddr) glsAddr.style.display = 'none';
+        document.getElementById('distanceResult').classList.remove('visible', 'success', 'warning', 'error');
+        document.getElementById('deliverySummary').style.display = 'none';
+        document.getElementById('deliveryConfirm').disabled = true;
+        document.getElementById('deliveryDateInput').value = '';
+        document.getElementById('deliveryAddressInput').value = '';
+        const addrName = document.getElementById('deliveryAddressName');
+        const addrZip = document.getElementById('deliveryAddressZip');
+        const addrCity = document.getElementById('deliveryAddressCity');
+        if (addrName) addrName.value = '';
+        if (addrZip) addrZip.value = '';
+        if (addrCity) addrCity.value = '';
+        
+        // Masquer complètement la zone de date au reset
+        const dateSection = document.querySelector('.delivery-date-section');
+        if (dateSection) dateSection.style.display = 'none';
+        document.getElementById('dateHint').innerHTML = '<i class="fas fa-info-circle"></i><span>Sélectionnez d\'abord un mode de livraison</span>';
+        
+        // Reset date summary row visibility
+        const dateRow = document.getElementById('summaryDate')?.closest('.summary-row');
+        if (dateRow) dateRow.style.display = '';
+
+        // Reset step indicators
+        overlay.querySelectorAll('.delivery-step-indicator').forEach(s => {
+            s.classList.remove('active', 'completed');
         });
+        overlay.querySelector('[data-step="1"]').classList.add('active');
+        overlay.querySelectorAll('.step-connector').forEach(c => c.classList.remove('completed'));
 
-        submenu.innerHTML = html;
+        // Reset GLS sub-options
+        overlay.querySelectorAll('.gls-suboption').forEach(s => s.classList.remove('selected'));
+        overlay.querySelector('.gls-suboption[data-sub="domicile"]').classList.add('selected');
+        overlay.querySelector('input[value="domicile"]').checked = true;
     },
-    
-    /**
-     * Build dynamic collection filter buttons from Shopify data
-     */
-    buildCollectionFilters() {
-        const filtersContainer = document.getElementById('productFilters');
-        if (!filtersContainer || this.collections.length === 0) return;
-        
-        // Icon mapping based on common collection names (fallback)
-        const iconMap = {
-            'bouquet': 'fa-spa',
-            'rose': 'fa-gem',
-            'éternelle': 'fa-gem',
-            'eternelle': 'fa-gem',
-            'kinder': 'fa-gift',
-            'box': 'fa-gift',
-            'coffret': 'fa-gift',
-            'peluche': 'fa-heart',
-            'teddy': 'fa-heart',
-            'accessoire': 'fa-ring',
-            'plante': 'fa-leaf',
-            'composition': 'fa-seedling',
-            'mariage': 'fa-rings-wedding',
-            'deuil': 'fa-dove',
-        };
-        
-        const self = this;
-        function getIconForCollection(collection) {
-            // First check saved icons
-            const numericId = collection.id.split('/').pop();
-            if (self.collectionIcons && self.collectionIcons[numericId]) {
-                return self.collectionIcons[numericId];
+
+    // ===================================
+    // Select Delivery Mode
+    // ===================================
+    selectMode(mode) {
+        this.selectedMode = mode;
+
+        const overlay = document.getElementById('deliveryOverlay');
+        overlay.querySelectorAll('.delivery-option').forEach(o => o.classList.remove('selected'));
+        overlay.querySelector(`[data-mode="${mode}"]`).classList.add('selected');
+
+        // Show/hide relevant sections
+        const localSection = document.getElementById('localAddressSection');
+        const glsSuboptions = document.getElementById('glsSuboptions');
+        const dateInput = document.getElementById('deliveryDateInput');
+        const dateHint = document.getElementById('dateHint');
+
+        localSection.classList.remove('visible');
+        glsSuboptions.classList.remove('visible');
+        const glsAddressSection = document.getElementById('glsAddressSection');
+        const relaisInfoMessage = document.getElementById('relaisInfoMessage');
+        if (glsAddressSection) glsAddressSection.style.display = 'none';
+        if (relaisInfoMessage) relaisInfoMessage.style.display = 'none';
+
+        // Show/hide date section based on mode
+        const dateSection = document.querySelector('.delivery-date-section');
+
+        if (mode === 'local') {
+            localSection.classList.add('visible');
+            const today = new Date().toISOString().split('T')[0];
+            dateInput.min = today;
+            
+            // Show hint with unavailable dates if any
+            let hintText = 'Livraison possible le jour même selon disponibilité*';
+            if (this.unavailableDates.length > 0) {
+                const sortedDates = [...this.unavailableDates].sort();
+                const formattedDates = sortedDates.map(dateStr => {
+                    const date = new Date(dateStr + 'T12:00:00');
+                    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+                }).join(', ');
+                hintText += `<br><span style="color:#dc2626;">⚠️ Dates indisponibles: ${formattedDates}</span>`;
             }
-            // Fallback to keyword detection
-            const lower = collection.title.toLowerCase();
-            for (const [keyword, icon] of Object.entries(iconMap)) {
-                if (lower.includes(keyword)) return icon;
+            dateHint.innerHTML = `<i class="fas fa-info-circle"></i><span>${hintText}</span>`;
+            if (dateSection) dateSection.style.display = 'block';
+            // Render calendar
+            this.renderCalendar();
+        } else if (mode === 'france') {
+            glsSuboptions.classList.add('visible');
+            this.selectedSubMode = overlay.querySelector('.gls-suboption.selected')?.dataset.sub || 'domicile';
+            this.updateGlsAddressVisibility();
+            // Hide date picker for GLS — no date selection
+            if (dateSection) dateSection.style.display = 'none';
+            this.selectedDate = null;
+            dateInput.value = '';
+        } else if (mode === 'pickup') {
+            const today = new Date().toISOString().split('T')[0];
+            dateInput.min = today;
+            // Ajout affichage dates indisponibles retrait
+            let hintText = "Retrait possible le jour même aux horaires d'ouverture*";
+            if (this.unavailablePickupDates.length > 0) {
+                const sortedDates = [...this.unavailablePickupDates].sort();
+                const formattedDates = sortedDates.map(dateStr => {
+                    const date = new Date(dateStr + 'T12:00:00');
+                    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+                }).join(', ');
+                hintText += `<br><span style="color:#dc2626;">⚠️ Dates indisponibles: ${formattedDates}</span>`;
             }
-            return 'fa-tag';
+            dateHint.innerHTML = `<i class="fas fa-info-circle"></i><span>${hintText}</span>`;
+            if (dateSection) dateSection.style.display = 'block';
+            // Render calendar
+            this.renderCalendar();
         }
-        
-        // Keep the "Tout Voir" button, add collection buttons
-        const collectionButtons = this.collections.map(collection => {
-            const icon = getIconForCollection(collection);
-            const productCount = collection.products.edges.length;
-            return `
-                <button class="filter-btn" data-filter="collection:${collection.handle}" title="${productCount} produit${productCount > 1 ? 's' : ''}">
-                    <i class="fas ${icon}"></i>
-                    <span>${collection.title}</span>
-                </button>
-            `;
-        }).join('');
-        
-        filtersContainer.innerHTML = `
-            <button class="filter-btn active" data-filter="all">
-                <i class="fas fa-th"></i>
-                <span>Tout Voir</span>
-            </button>
-            ${collectionButtons}
-        `;
+
+        // Update step indicators
+        overlay.querySelector('[data-step="1"]').classList.add('completed');
+        overlay.querySelector('[data-step="1"]').classList.remove('active');
+        overlay.querySelector('[data-step="2"]').classList.add('active');
+        overlay.querySelectorAll('.step-connector')[0].classList.add('completed');
+
+        this.updatePricing();
     },
-    
-    /**
-     * Fetch Products from Shopify
-     */
-    async fetchProducts() {
-        const query = `
-            query {
-                products(first: 50) {
-                    edges {
-                        node {
-                            id
-                            title
-                            description
-                            handle
-                            tags
-                            productType
-                            createdAt
-                            priceRange {
-                                minVariantPrice {
-                                    amount
-                                    currencyCode
-                                }
-                            }
-                            images(first: 10) {
-                                edges {
-                                    node {
-                                        url
-                                        altText
-                                    }
-                                }
-                            }
-                            variants(first: 20) {
-                                edges {
-                                    node {
-                                        id
-                                        title
-                                        priceV2 {
-                                            amount
-                                            currencyCode
-                                        }
-                                        compareAtPriceV2 {
-                                            amount
-                                            currencyCode
-                                        }
-                                        availableForSale
-                                        quantityAvailable
-                                        selectedOptions {
-                                            name
-                                            value
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        `;
-        
+
+    // ===================================
+    // Calculate Distance (using geocoding approximation)
+    // ===================================
+    async calculateDistance(address) {
+        if (!address || address.length < 5) {
+            document.getElementById('distanceResult').classList.remove('visible');
+            this.deliveryDistance = null;
+            this.updatePricing();
+            return;
+        }
+
+        const loader = document.getElementById('addressLoader');
+        const result = document.getElementById('distanceResult');
+        if (loader) loader.classList.add('active');
+        result.classList.remove('visible', 'success', 'warning', 'error');
+
         try {
-            const response = await this.graphqlRequest(query);
-            this.products = response.data.products.edges.map(edge => edge.node);
+            // Use Nominatim (OpenStreetMap) for free geocoding
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=fr,be,lu&limit=1`,
+                { headers: { 'Accept-Language': 'fr' } }
+            );
+            const data = await response.json();
+
+            if (data && data.length > 0) {
+                const lat = parseFloat(data[0].lat);
+                const lng = parseFloat(data[0].lon);
+                
+                // Calculate distance (Haversine formula * 1.3 for road approximation)
+                const distance = this.haversineDistance(this.config.shopLat, this.config.shopLng, lat, lng);
+                const roadDistance = Math.round(distance * 1.3); // approximate road distance
+                
+                this.deliveryDistance = roadDistance;
+                this.deliveryAddress = address;
+
+                if (roadDistance <= this.config.maxLocalDistance) {
+                    let priceInfo = this.getLocalPrice(roadDistance);
+                    result.className = 'distance-result visible success';
+                    result.innerHTML = `<i class="fas fa-check-circle"></i> ~${roadDistance} km — Frais de livraison : <strong>${priceInfo.label}</strong>`;
+                } else {
+                    result.className = 'distance-result visible error';
+                    result.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ~${roadDistance} km — Adresse trop éloignée pour la livraison locale. Choisissez la livraison France (GLS).`;
+                    this.deliveryDistance = null;
+                }
+            } else {
+                result.className = 'distance-result visible warning';
+                result.innerHTML = `<i class="fas fa-exclamation-circle"></i> Adresse non trouvée. Vérifiez l'adresse et réessayez.`;
+                this.deliveryDistance = null;
+            }
         } catch (error) {
-            console.error('❌ Erreur chargement produits:', error);
-            this.products = [];
+            console.error('Distance calculation error:', error);
+            // Fallback: let user proceed without distance check
+            result.className = 'distance-result visible warning';
+            result.innerHTML = `<i class="fas fa-info-circle"></i> Impossible de vérifier la distance. Les frais seront confirmés par My Flowers.`;
+            this.deliveryDistance = 15; // assume mid-range
         }
+
+        if (loader) loader.classList.remove('active');
+        this.updatePricing();
     },
-    
-    /**
-     * Create Cart
-     */
-    async createCart() {
-        // Vérifier si un cart existe déjà dans le localStorage
-        const savedCartId = localStorage.getItem('shopify_cart_id');
+
+    // ===================================
+    // Haversine Distance (km)
+    // ===================================
+    haversineDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    },
+
+    // ===================================
+    // Get Local Delivery Price
+    // ===================================
+    getLocalPrice(distanceKm) {
+        for (const tier of this.config.localPricing) {
+            if (distanceKm <= tier.maxKm) {
+                return { price: tier.price, label: tier.label };
+            }
+        }
+        return { price: null, label: 'Non disponible' };
+    },
+
+    // ===================================
+    // Update Pricing
+    // ===================================
+    updatePricing() {
+        if (!this.selectedMode) {
+            this.deliveryPrice = null;
+            this.updateSummary();
+            return;
+        }
+
+        switch (this.selectedMode) {
+            case 'local':
+                if (this.deliveryDistance !== null) {
+                    const priceInfo = this.getLocalPrice(this.deliveryDistance);
+                    this.deliveryPrice = priceInfo.price;
+                } else {
+                    this.deliveryPrice = null;
+                }
+                break;
+                
+            case 'france':
+                if (this.selectedSubMode === 'relais') {
+                    this.deliveryPrice = this.config.francePricing.relais.price;
+                } else {
+                    this.deliveryPrice = this.config.francePricing.domicile.price;
+                }
+                break;
+                
+            case 'pickup':
+                this.deliveryPrice = this.config.pickupPrice;
+                break;
+        }
+
+        this.updateSummary();
+    },
+
+    // ===================================
+    // Validate Date
+    // ===================================
+    validateDate() {
+        const dateInput = document.getElementById('deliveryDateInput');
+        const selectedDate = new Date(this.selectedDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Check if Sunday
+        if (selectedDate.getDay() === 0) {
+            this.showDateError('⛔ La boutique est fermée le dimanche. Veuillez choisir un autre jour.');
+            this.selectedDate = null;
+            dateInput.value = '';
+            this.renderCalendar();
+            return false;
+        }
+
+        // Check if date is unavailable (only for local delivery)
+        if (this.selectedMode === 'local') {
+            const dateStr = this.selectedDate;
+            if (!this.isDateAvailable(dateStr)) {
+                const date = new Date(dateStr + 'T12:00:00');
+                const formatted = date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+                this.showDateError(`⛔ Le ${formatted} n'est pas disponible pour la livraison. Veuillez en choisir une autre.`);
+                this.selectedDate = null;
+                dateInput.value = '';
+                this.renderCalendar();
+                return false;
+            }
+        }
+
+        return true;
+    },
+
+    showDateError(message) {
+        const dateHint = document.getElementById('dateHint');
+        dateHint.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:#dc2626;"></i><span style="color:#dc2626;">${message}</span>`;
+        setTimeout(() => {
+            this.selectMode(this.selectedMode); // re-set the normal hint
+        }, 3000);
+    },
+
+    // ===================================
+    // Update Summary
+    // ===================================
+    updateSummary() {
+        const summary = document.getElementById('deliverySummary');
+        const confirmBtn = document.getElementById('deliveryConfirm');
+        const overlay = document.getElementById('deliveryOverlay');
+
+        const hasMode = this.selectedMode !== null;
+        const hasPrice = this.deliveryPrice !== null;
+        const hasDate = this.selectedDate !== null;
+        const glsAddressRequired = this.selectedMode === 'france' && this.selectedSubMode !== 'relais';
+        const glsAddressProvided = !glsAddressRequired || (
+            (document.getElementById('glsAddressStreet')?.value || '').trim().length >= 3 &&
+            (document.getElementById('glsAddressZip')?.value || '').trim().length >= 4 &&
+            (document.getElementById('glsAddressCity')?.value || '').trim().length >= 2 &&
+            this.validateFrenchAddress()
+        );
+        const hasAddress = this.selectedMode === 'local'
+            ? (this.deliveryDistance !== null && this.validateFrenchAddress())
+            : glsAddressProvided;
+        // For France GLS, date is not required
+        const dateOk = this.selectedMode === 'france' || hasDate;
+
+        const canConfirm = hasMode && hasPrice && dateOk && hasAddress;
         
-        if (savedCartId) {
+        if (hasMode && (hasPrice || this.selectedMode === 'pickup')) {
+            summary.style.display = 'block';
+
+            // Subtotal
+            const subtotalDisplay = this.formatPrice(this.cartSubtotal);
+            document.getElementById('summarySubtotal').textContent = subtotalDisplay;
+
+            // Delivery label & price
+            const labelMap = {
+                'local': 'Livraison locale My Flowers',
+                'france': this.selectedSubMode === 'relais' ? 'Livraison GLS (point relais)' : 'Livraison GLS (domicile)',
+                'pickup': 'Retrait en boutique'
+            };
+            document.getElementById('summaryDeliveryLabel').textContent = labelMap[this.selectedMode] || 'Livraison';
+            
+            const priceEl = document.getElementById('summaryDeliveryPrice');
+            if (this.deliveryPrice === 0) {
+                priceEl.textContent = 'Gratuit';
+                priceEl.classList.add('free');
+            } else if (this.deliveryPrice !== null) {
+                const priceDisplay = this.formatPrice(this.deliveryPrice);
+                priceEl.textContent = priceDisplay;
+                priceEl.classList.remove('free');
+            } else {
+                priceEl.textContent = '—';
+                priceEl.classList.remove('free');
+            }
+
+            // Date
+            const dateEl = document.getElementById('summaryDate');
+            const dateRow = dateEl?.closest('.summary-row');
+            if (this.selectedMode === 'france') {
+                // Hide date row for GLS
+                if (dateRow) dateRow.style.display = 'none';
+            } else if (this.selectedDate) {
+                if (dateRow) dateRow.style.display = '';
+                const d = new Date(this.selectedDate);
+                dateEl.textContent = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            } else {
+                if (dateRow) dateRow.style.display = '';
+                dateEl.textContent = '—';
+            }
+
+            // Total
+            const total = this.cartSubtotal + (this.deliveryPrice || 0);
+            const totalDisplay = this.formatPrice(total);
+            document.getElementById('summaryTotal').textContent = totalDisplay;
+
+            // Step indicators
+            if (dateOk) {
+                overlay.querySelector('[data-step="2"]').classList.add('completed');
+                overlay.querySelector('[data-step="2"]').classList.remove('active');
+                overlay.querySelector('[data-step="3"]').classList.add('active');
+                overlay.querySelectorAll('.step-connector')[1].classList.add('completed');
+            }
+        } else {
+            summary.style.display = 'none';
+        }
+
+        confirmBtn.disabled = !canConfirm;
+    },
+
+    // ===================================
+    // Validate French Address
+    // ===================================
+    validateFrenchAddress() {
+        // Determine which zip field to check based on mode
+        let zipFieldId, errorAnchorId;
+        if (this.selectedMode === 'france' && this.selectedSubMode === 'domicile') {
+            zipFieldId = 'glsAddressZip';
+            errorAnchorId = 'glsAddressZip';
+        } else if (this.selectedMode === 'local') {
+            zipFieldId = 'deliveryAddressZip';
+            errorAnchorId = 'deliveryAddressZip';
+        } else {
+            return true; // relais or pickup: no address needed
+        }
+
+        const zip = (document.getElementById(zipFieldId)?.value || '').trim();
+        if (!zip) return false; // No zip entered yet
+
+        // French postal codes: 5 digits, starting 01-95 for metropolitan,
+        // or 971-976 for DOM-TOM (Guadeloupe, Martinique, Guyane, Réunion, Mayotte)
+        const frenchZipRegex = /^(0[1-9]|[1-8]\d|9[0-5])\d{3}$|^97[1-6]\d{2}$|^98[4-9]\d{2}$/;
+        const isValid = frenchZipRegex.test(zip);
+
+        // Show/hide error message on the zip field
+        const zipField = document.getElementById(zipFieldId);
+        const errorMsgId = zipFieldId + 'ErrorMsg';
+        const existingError = document.getElementById(errorMsgId);
+
+        if (!isValid && zip.length >= 4) {
+            zipField.style.borderColor = '#dc2626';
+            if (!existingError) {
+                const msg = document.createElement('div');
+                msg.id = errorMsgId;
+                msg.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Livraison disponible en France uniquement. Vérifiez le code postal.';
+                msg.style.cssText = 'color:#dc2626; font-size:0.82rem; margin-top:0.5rem; font-weight:500; clear:both;';
+                // Insert after the parent row (the flex div containing zip + city)
+                const parentRow = zipField.parentNode;
+                parentRow.parentNode.insertBefore(msg, parentRow.nextSibling);
+            }
+        } else {
+            zipField.style.borderColor = '';
+            if (existingError) existingError.remove();
+        }
+
+        return isValid;
+    },
+
+    // ===================================
+    // Format Price
+    // ===================================
+    formatPrice(amount) {
+        return new Intl.NumberFormat('fr-FR', {
+            style: 'currency',
+            currency: 'EUR'
+        }).format(amount);
+    },
+
+    // ===================================
+    // Confirm & Proceed to Checkout
+    // ===================================
+    async confirm() {
+        if (!this.selectedMode || this.deliveryPrice === null || (this.selectedMode !== 'france' && !this.selectedDate)) return;
+
+        // Store delivery info for checkout
+        const deliveryInfo = {
+            mode: this.selectedMode,
+            subMode: this.selectedSubMode,
+            address: this.deliveryAddress,
+            distance: this.deliveryDistance,
+            price: this.deliveryPrice,
+            date: this.selectedDate || null,
+            dateFormatted: this.selectedDate
+                ? new Date(this.selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                : null
+        };
+
+        // Structured address for checkout prefill
+        if (this.selectedMode === 'france') {
+            // For point relais, we only need the name (address will be the relay point)
+            if (this.selectedSubMode === 'relais') {
+                // Get user name from logged-in account or leave empty
+                const userStr = localStorage.getItem('fleuriste_user');
+                if (userStr) {
+                    try {
+                        const user = JSON.parse(userStr);
+                        deliveryInfo.fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+                    } catch (e) {}
+                }
+                // No address needed - will be selected after payment
+                deliveryInfo.street = '';
+                deliveryInfo.zip = '';
+                deliveryInfo.city = '';
+                deliveryInfo.country = 'France';
+            } else {
+                // Domicile mode - full address required
+                deliveryInfo.fullName = (document.getElementById('glsAddressName')?.value || '').trim();
+                deliveryInfo.street = (document.getElementById('glsAddressStreet')?.value || '').trim();
+                deliveryInfo.zip = (document.getElementById('glsAddressZip')?.value || '').trim();
+                deliveryInfo.city = (document.getElementById('glsAddressCity')?.value || '').trim();
+                deliveryInfo.country = 'France';
+            }
+        } else if (this.selectedMode === 'local') {
+            deliveryInfo.fullName = (document.getElementById('deliveryAddressName')?.value || '').trim();
+            deliveryInfo.street = (document.getElementById('deliveryAddressInput')?.value || '').trim();
+            deliveryInfo.zip = (document.getElementById('deliveryAddressZip')?.value || '').trim();
+            deliveryInfo.city = (document.getElementById('deliveryAddressCity')?.value || '').trim();
+            deliveryInfo.country = 'France';
+        }
+
+        localStorage.setItem('myflowers_delivery', JSON.stringify(deliveryInfo));
+
+        // Build note for Shopify checkout
+        const modeLabels = {
+            'local': 'Livraison locale My Flowers',
+            'france': this.selectedSubMode === 'relais' ? 'GLS Point Relais' : 'GLS Domicile',
+            'pickup': 'Retrait en boutique'
+        };
+
+        const note = `Mode: ${modeLabels[this.selectedMode]}` +
+            (deliveryInfo.dateFormatted ? ` | Date souhaitée: ${deliveryInfo.dateFormatted}` : '') +
+            (this.deliveryAddress ? ` | Adresse: ${this.deliveryAddress}` : '') +
+            ` | Frais livraison: ${this.deliveryPrice === 0 ? 'Gratuit' : this.formatPrice(this.deliveryPrice)}`;
+
+        // Try to add note to Shopify cart via attributes
+        await this.addCartNote(note);
+
+        // Proceed to Shopify checkout
+        this.close();
+        
+        // Show loading overlay during checkout preparation
+        this.showCheckoutLoader();
+        
+        if (typeof ShopifyIntegration !== 'undefined' && ShopifyIntegration.cart && ShopifyIntegration.cart.checkoutUrl) {
             try {
-                // Récupérer le cart existant
-                const cart = await this.getCart(savedCartId);
-                if (cart) {
-                    this.cart = cart;
-                    return;
+                const checkoutUrl = await ShopifyIntegration.getCheckoutUrlWithCustomOptions(note, deliveryInfo);
+                
+                if (checkoutUrl) {
+                    // Small delay to ensure the checkout is ready
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    window.location.href = this.normalizeCheckoutUrl(checkoutUrl);
+                } else {
+                    this.hideCheckoutLoader();
+                    window.location.href = this.normalizeCheckoutUrl(ShopifyIntegration.cart.checkoutUrl);
                 }
             } catch (error) {
-                // Cart invalid, create new one
+                console.error('Checkout error:', error);
+                this.hideCheckoutLoader();
+                this.showNotification('Erreur lors de la préparation du paiement. Veuillez réessayer.', 'error');
             }
-        }
-        
-        // Créer un nouveau cart
-        const mutation = `
-            mutation {
-                cartCreate {
-                    cart {
-                        id
-                        checkoutUrl
-                        lines(first: 10) {
-                            edges {
-                                node {
-                                    id
-                                    quantity
-                                    merchandise {
-                                        ... on ProductVariant {
-                                            id
-                                            title
-                                            priceV2 {
-                                                amount
-                                                currencyCode
-                                            }
-                                            product {
-                                                title
-                                                images(first: 1) {
-                                                    edges {
-                                                        node {
-                                                            url
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        cost {
-                            totalAmount {
-                                amount
-                                currencyCode
-                            }
-                        }
-                    }
-                }
-            }
-        `;
-        
-        try {
-            const response = await this.graphqlRequest(mutation);
-            this.cart = response.data.cartCreate.cart;
-            localStorage.setItem('shopify_cart_id', this.cart.id);
-        } catch (error) {
-            console.error('❌ Erreur création panier:', error);
+        } else {
+            this.hideCheckoutLoader();
+            // Demo mode notification
+            this.showNotification('Commande confirmée ! En production, vous seriez redirigé vers le paiement sécurisé.', 'success');
         }
     },
-    
-    /**
-     * Get Cart
-     */
-    async getCart(cartId) {
-        const query = `
-            query($cartId: ID!) {
-                cart(id: $cartId) {
-                    id
-                    checkoutUrl
-                    lines(first: 50) {
-                        edges {
-                            node {
-                                id
-                                quantity
-                                merchandise {
-                                    ... on ProductVariant {
-                                        id
-                                        title
-                                        priceV2 {
-                                            amount
-                                            currencyCode
-                                        }
-                                        product {
-                                            title
-                                            handle
-                                            images(first: 1) {
-                                                edges {
-                                                    node {
-                                                        url
-                                                        altText
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    cost {
-                        totalAmount {
-                            amount
-                            currencyCode
-                        }
-                        subtotalAmount {
-                            amount
-                            currencyCode
-                        }
-                    }
-                }
-            }
-        `;
-        
-        const response = await this.graphqlRequest(query, { cartId });
-        return response.data.cart;
-    },
-    
-    /**
-     * Add to Cart
-     */
-    async addToCart(variantId, quantity = 1, customOptions = null) {
-        if (!this.cart) {
-            await this.createCart();
-        }
-        
-        // Build line attributes from custom options (so they appear in Shopify orders)
-        const lineAttributes = [];
-        if (customOptions && customOptions.length > 0) {
-            customOptions.forEach(opt => {
-                lineAttributes.push({
-                    key: opt.name,
-                    value: `${opt.value}${opt.price > 0 ? ' (+' + opt.price.toFixed(2) + '€)' : ''}`
-                });
-            });
-            // Store total options surcharge as attribute
-            const optionsSurcharge = customOptions.reduce((sum, opt) => sum + (opt.price || 0), 0);
-            if (optionsSurcharge > 0) {
-                lineAttributes.push({
-                    key: '_options_surcharge',
-                    value: String(optionsSurcharge.toFixed(2))
-                });
-            }
-        }
-        
-        const mutation = `
-            mutation($cartId: ID!, $lines: [CartLineInput!]!) {
-                cartLinesAdd(cartId: $cartId, lines: $lines) {
-                    cart {
-                        id
-                        checkoutUrl
-                        lines(first: 50) {
-                            edges {
-                                node {
-                                    id
-                                    quantity
-                                    merchandise {
-                                        ... on ProductVariant {
-                                            id
-                                            title
-                                            priceV2 {
-                                                amount
-                                                currencyCode
-                                            }
-                                            product {
-                                                title
-                                                handle
-                                                images(first: 1) {
-                                                    edges {
-                                                        node {
-                                                            url
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    attributes {
-                                        key
-                                        value
-                                    }
-                                }
-                            }
-                        }
-                        cost {
-                            totalAmount {
-                                amount
-                                currencyCode
-                            }
-                        }
-                    }
-                }
-            }
-        `;
-        
-        try {
-            // Record lines before adding to find the new/updated line
-            const linesBefore = this.cart?.lines?.edges?.map(e => ({
-                id: e.node.id,
-                variantId: e.node.merchandise.id,
-                qty: e.node.quantity
-            })) || [];
-            
-            const lineInput = {
-                merchandiseId: variantId,
-                quantity: quantity
-            };
-            if (lineAttributes.length > 0) {
-                lineInput.attributes = lineAttributes;
-            }
-            
-            const response = await this.graphqlRequest(mutation, {
-                cartId: this.cart.id,
-                lines: [lineInput]
-            });
-            
-            this.cart = response.data.cartLinesAdd.cart;
-            
-            // Store custom options in localStorage if present
-            if (customOptions && customOptions.length > 0) {
-                const linesAfter = this.cart.lines.edges;
-                
-                // Find the correct line: match by variant ID
-                // If a line with this variant already existed, it was updated (qty increased)
-                // If not, a new line was created
-                let targetLineId = null;
-                
-                // Strategy 1: Find a new line that wasn't there before
-                const newLine = linesAfter.find(edge => 
-                    !linesBefore.some(lb => lb.id === edge.node.id)
-                );
-                if (newLine) {
-                    targetLineId = newLine.node.id;
-                }
-                
-                // Strategy 2: If no new line, find the line with matching variant ID
-                if (!targetLineId) {
-                    const matchingLine = linesAfter.find(edge => 
-                        edge.node.merchandise.id === variantId
-                    );
-                    if (matchingLine) {
-                        targetLineId = matchingLine.node.id;
-                    }
-                }
-                
-                // Strategy 3: Fallback to last line
-                if (!targetLineId && linesAfter.length > 0) {
-                    targetLineId = linesAfter[linesAfter.length - 1].node.id;
-                }
-                
-                if (targetLineId) {
-                    const cartOptions = JSON.parse(localStorage.getItem('shopify_cart_options') || '{}');
-                    cartOptions[targetLineId] = customOptions;
-                    localStorage.setItem('shopify_cart_options', JSON.stringify(cartOptions));
-                }
-            }
-            
-            this.updateCartUI();
-            this.showNotification('✅ Produit ajouté au panier !', 'success');
-        } catch (error) {
-            console.error('❌ Erreur ajout panier:', error);
-            this.showNotification('❌ Erreur lors de l\'ajout au panier', 'error');
-        }
-    },
-    
-    /**
-     * Update Cart Line
-     */
-    async updateCartLine(lineId, quantity) {
-        const mutation = `
-            mutation($cartId: ID!, $lines: [CartLineUpdateInput!]!) {
-                cartLinesUpdate(cartId: $cartId, lines: $lines) {
-                    cart {
-                        id
-                        lines(first: 50) {
-                            edges {
-                                node {
-                                    id
-                                    quantity
-                                    merchandise {
-                                        ... on ProductVariant {
-                                            id
-                                            priceV2 {
-                                                amount
-                                                currencyCode
-                                            }
-                                            product {
-                                                title
-                                                images(first: 1) {
-                                                    edges {
-                                                        node {
-                                                            url
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        cost {
-                            totalAmount {
-                                amount
-                                currencyCode
-                            }
-                        }
-                    }
-                }
-            }
-        `;
-        
-        try {
-            const response = await this.graphqlRequest(mutation, {
-                cartId: this.cart.id,
-                lines: [{
-                    id: lineId,
-                    quantity: quantity
-                }]
-            });
-            
-            this.cart = response.data.cartLinesUpdate.cart;
-            this.updateCartUI();
-        } catch (error) {
-            console.error('❌ Erreur mise à jour panier:', error);
-        }
-    },
-    
-    /**
-     * Remove from Cart
-     */
-    async removeFromCart(lineId) {
-        const mutation = `
-            mutation($cartId: ID!, $lineIds: [ID!]!) {
-                cartLinesRemove(cartId: $cartId, lineIds: $lineIds) {
-                    cart {
-                        id
-                        lines(first: 50) {
-                            edges {
-                                node {
-                                    id
-                                    quantity
-                                    merchandise {
-                                        ... on ProductVariant {
-                                            id
-                                            priceV2 {
-                                                amount
-                                                currencyCode
-                                            }
-                                            product {
-                                                title
-                                                images(first: 1) {
-                                                    edges {
-                                                        node {
-                                                            url
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        cost {
-                            totalAmount {
-                                amount
-                                currencyCode
-                            }
-                        }
-                    }
-                }
-            }
-        `;
-        
-        try {
-            const response = await this.graphqlRequest(mutation, {
-                cartId: this.cart.id,
-                lineIds: [lineId]
-            });
-            
-            this.cart = response.data.cartLinesRemove.cart;
-            this.updateCartUI();
-            this.showNotification('Produit retiré du panier', 'info');
-        } catch (error) {
-            console.error('❌ Erreur suppression:', error);
-        }
-    },
-    
-    /**
-     * GraphQL Request Helper
-     */
-    async graphqlRequest(query, variables = {}) {
-        const response = await fetch(
-            `https://${SHOPIFY_CONFIG.storeDomain}/api/${SHOPIFY_CONFIG.apiVersion}/graphql.json`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Shopify-Storefront-Access-Token': SHOPIFY_CONFIG.storefrontAccessToken
-                },
-                body: JSON.stringify({ query, variables })
-            }
-        );
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.errors) {
-            console.error('GraphQL errors:', data.errors);
-            throw new Error('GraphQL Error');
-        }
-        
-        return data;
-    },
-    
-    /**
-     * Initialize Cart UI
-     */
-    initCartUI() {
-        // Créer l'icône panier dans la navigation
-        const navActions = document.querySelector('.nav-actions');
-        if (navActions && !document.getElementById('cartButton')) {
-            const cartButton = document.createElement('button');
-            cartButton.id = 'cartButton';
-            cartButton.className = 'cart-button';
-            cartButton.innerHTML = `
-                <i class="fas fa-shopping-bag"></i>
-                <span class="cart-count">0</span>
-            `;
-            cartButton.addEventListener('click', () => this.toggleCartPanel());
-            navActions.prepend(cartButton);
-        }
-        
-        // Créer le panneau panier
-        if (!document.getElementById('cartPanel')) {
-            const cartPanel = document.createElement('div');
-            cartPanel.id = 'cartPanel';
-            cartPanel.className = 'cart-panel';
-            cartPanel.innerHTML = `
-                <div class="cart-overlay"></div>
-                <div class="cart-content">
-                    <div class="cart-header">
-                        <h3><i class="fas fa-shopping-bag"></i> Mon Panier</h3>
-                        <button class="cart-close"><i class="fas fa-times"></i></button>
-                    </div>
-                    <div class="cart-items" id="cartItemsList"></div>
-                    <div class="cart-footer">
-                        <div class="cart-total">
-                            <span>Total</span>
-                            <strong id="cartTotal">0,00 €</strong>
-                        </div>
-                        <button class="btn btn-primary" id="checkoutButton">
-                            <span>Procéder au paiement</span>
-                            <i class="fas fa-arrow-right"></i>
-                        </button>
-                        <button class="btn btn-secondary" id="continueShopping">
-                            Continuer mes achats
-                        </button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(cartPanel);
-            
-            // Event listeners
-            cartPanel.querySelector('.cart-close').addEventListener('click', () => this.toggleCartPanel());
-            cartPanel.querySelector('.cart-overlay').addEventListener('click', () => this.toggleCartPanel());
-            cartPanel.querySelector('#continueShopping').addEventListener('click', () => this.toggleCartPanel());
-            cartPanel.querySelector('#checkoutButton').addEventListener('click', () => this.checkout());
-        }
-    },
-    
-    /**
-     * Update Cart UI
-     */
-    updateCartUI() {
-        if (!this.cart) return;
-        
-        const lines = this.cart.lines?.edges || [];
-        const count = lines.reduce((sum, edge) => sum + edge.node.quantity, 0);
-        
-        // Mettre à jour le compteur
-        const cartCount = document.querySelector('.cart-count');
-        if (cartCount) {
-            cartCount.textContent = count;
-            cartCount.style.display = count > 0 ? 'flex' : 'none';
-        }
-        
-        // Mettre à jour la liste des produits
-        const cartItemsList = document.getElementById('cartItemsList');
-        if (cartItemsList) {
-            if (lines.length === 0) {
-                cartItemsList.innerHTML = `
-                    <div class="cart-empty">
-                        <i class="fas fa-shopping-bag"></i>
-                        <p>Votre panier est vide</p>
-                    </div>
-                `;
-            } else {
-                cartItemsList.innerHTML = lines.map(edge => this.createCartItemHTML(edge.node)).join('');
-            }
-        }
 
-        // Mettre à jour le total (Shopify + options personnalisées)
-        const cartTotal = document.getElementById('cartTotal');
-        if (cartTotal && this.cart.cost) {
-            const shopifyAmount = parseFloat(this.cart.cost.totalAmount.amount);
-            const subtotalAmount = parseFloat(this.cart.cost.subtotalAmount?.amount || shopifyAmount);
-            
-            // Calculer le total des options personnalisées
-            const cartOptions = JSON.parse(localStorage.getItem('shopify_cart_options') || '{}');
-            const lines = this.cart.lines?.edges || [];
-            let optionsTotal = 0;
-            lines.forEach(edge => {
-                const lineId = edge.node.id;
-                const itemOptions = cartOptions[lineId] || [];
-                const optionsPrice = itemOptions.reduce((sum, opt) => sum + (opt.price || 0), 0);
-                optionsTotal += optionsPrice * edge.node.quantity;
-            });
-            
-            // Use SUBTOTAL instead of totalAmount to avoid shipping charges
-            const totalWithOptions = subtotalAmount + optionsTotal;
-            
-            cartTotal.textContent = new Intl.NumberFormat('fr-FR', {
-                style: 'currency',
-                currency: this.cart.cost.totalAmount.currencyCode
-            }).format(totalWithOptions);
-        }
-    },
-    
-    /**
-     * Create Cart Item HTML
-     */
-    createCartItemHTML(item) {
-        const product = item.merchandise.product;
-        const variant = item.merchandise;
-        const image = product.images.edges[0]?.node.url || '';
-        const basePrice = parseFloat(variant.priceV2.amount);
+    // ===================================
+    // Show/Hide Checkout Loader
+    // ===================================
+    showCheckoutLoader() {
+        // Remove existing loader if any
+        this.hideCheckoutLoader();
         
-        // Get custom options from localStorage
-        const cartOptions = JSON.parse(localStorage.getItem('shopify_cart_options') || '{}');
-        const itemOptions = cartOptions[item.id] || [];
-        
-        // Calculate options price
-        let optionsPrice = 0;
-        if (itemOptions.length > 0) {
-            optionsPrice = itemOptions.reduce((sum, opt) => sum + (opt.price || 0), 0);
-        }
-        
-        const totalItemPrice = basePrice + optionsPrice;
-        const total = totalItemPrice * item.quantity;
-        
-        // Build options HTML
-        let optionsHTML = '';
-        if (itemOptions.length > 0) {
-            optionsHTML = '<div class="cart-item-options" style="display:flex;flex-direction:column;gap:0.25rem;margin-top:0.4rem;">';
-            itemOptions.forEach(opt => {
-                optionsHTML += `<span class="cart-option" style="display:block;"><i class="fas fa-check"></i> <strong style="color:#555;">${opt.label || opt.name} :</strong> ${opt.value}${opt.price > 0 ? ' (+' + opt.price.toFixed(2) + '€)' : ''}</span>`;
-            });
-            optionsHTML += '</div>';
-        }
-        
-        return `
-            <div class="cart-item">
-                <img src="${image}" alt="${product.title}">
-                <div class="cart-item-info">
-                    <h4>${product.title}</h4>
-                    <p class="cart-item-variant">${variant.title !== 'Default Title' ? variant.title : ''}</p>
-                    ${optionsHTML}
-                    <div class="cart-item-price">${totalItemPrice.toFixed(2)} €</div>
+        const loader = document.createElement('div');
+        loader.id = 'checkout-loader-overlay';
+        loader.innerHTML = `
+            <div class="checkout-loader-content">
+                <div class="checkout-loader-icon">
+                    <i class="fas fa-flower-tulip"></i>
                 </div>
-                <div class="cart-item-actions">
-                    <div class="quantity-selector">
-                        <button onclick="ShopifyIntegration.updateCartLine('${item.id}', ${item.quantity - 1})">
-                            <i class="fas fa-minus"></i>
-                        </button>
-                        <span>${item.quantity}</span>
-                        <button onclick="ShopifyIntegration.updateCartLine('${item.id}', ${item.quantity + 1})">
-                            <i class="fas fa-plus"></i>
-                        </button>
-                    </div>
-                    <button class="remove-item" onclick="ShopifyIntegration.removeFromCart('${item.id}')">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-                <div class="cart-item-total">${total.toFixed(2)} €</div>
+                <div class="checkout-spinner"></div>
+                <h3>Préparation de votre paiement...</h3>
+                <p>Vous allez être redirigé vers la page de paiement sécurisé</p>
             </div>
         `;
-    },
-    
-    /**
-     * Toggle Cart Panel
-     */
-    toggleCartPanel() {
-        const cartPanel = document.getElementById('cartPanel');
-        if (cartPanel) {
-            cartPanel.classList.toggle('active');
-            const isOpen = cartPanel.classList.contains('active');
-            document.body.style.overflow = isOpen ? 'hidden' : '';
-            document.documentElement.style.overflow = isOpen ? 'hidden' : '';
-        }
-    },
-    
-    /**
-     * Checkout - Opens delivery selection first
-     */
-    checkout() {
-        if (!this.cart && this.cartItems.length === 0) return;
+        loader.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999999;
+            backdrop-filter: blur(8px);
+        `;
         
-        // Calculate cart subtotal (Shopify base + custom options surcharges)
-        let subtotal = 0;
-        let shopifyTotal = 0;
-        let optionsTotal = 0;
+        const content = loader.querySelector('.checkout-loader-content');
+        content.style.cssText = `
+            text-align: center;
+            padding: 50px 40px;
+            border-radius: 20px;
+            max-width: 400px;
+        `;
+
+        const icon = loader.querySelector('.checkout-loader-icon');
+        icon.style.cssText = `
+            font-size: 2.5rem;
+            color: #D4A574;
+            margin-bottom: 20px;
+        `;
         
-        if (this.cart && this.cart.cost) {
-            shopifyTotal = parseFloat(this.cart.cost.totalAmount?.amount || 0);
-            subtotal = shopifyTotal;
-            
-            // Add custom options prices from localStorage
-            const cartOptions = JSON.parse(localStorage.getItem('shopify_cart_options') || '{}');
-            const lines = this.cart.lines?.edges || [];
-            
-            lines.forEach((edge, idx) => {
-                const lineId = edge.node.id;
-                const itemOptions = cartOptions[lineId] || [];
-                const lineOptionsPrice = itemOptions.reduce((sum, opt) => sum + (opt.price || 0), 0);
-                const lineTotal = lineOptionsPrice * edge.node.quantity;
-                optionsTotal += lineTotal;
-                subtotal += lineTotal;
-            });
-        } else {
-            // Fallback: calculate from local cart items
-            subtotal = this.cartItems.reduce((sum, item) => {
-                return sum + (parseFloat(item.price) * item.quantity);
-            }, 0);
-        }
+        const spinner = loader.querySelector('.checkout-spinner');
+        spinner.style.cssText = `
+            width: 48px;
+            height: 48px;
+            border: 3px solid #f0e6db;
+            border-top-color: #D4A574;
+            border-radius: 50%;
+            margin: 0 auto 24px;
+            animation: checkout-spin 0.8s linear infinite;
+        `;
 
-        // Close cart panel
-        this.toggleCartPanel();
+        const h3 = loader.querySelector('h3');
+        h3.style.cssText = `
+            font-family: 'Playfair Display', serif;
+            font-size: 1.3rem;
+            color: #2c2c2c;
+            margin: 0 0 8px 0;
+            font-weight: 600;
+        `;
 
-        // Open delivery system
-        if (typeof DeliverySystem !== 'undefined') {
-            DeliverySystem.open(subtotal);
-        } else if (this.cart && this.cart.checkoutUrl) {
-            // Fallback: direct checkout if delivery system not loaded
-            window.location.href = this.normalizeCheckoutUrl(this.cart.checkoutUrl);
-        }
-    },
-
-    buildCheckoutPrefillUrl(checkoutUrl, deliveryInfo = null) {
-        checkoutUrl = this.normalizeCheckoutUrl(checkoutUrl);
-        if (!checkoutUrl) return checkoutUrl;
-
-        // Check if user is logged in
-        const userStr = localStorage.getItem('fleuriste_user');
-        let isLoggedIn = false;
-        if (userStr) {
-            try {
-                const user = JSON.parse(userStr);
-                isLoggedIn = !!user.id; // User is logged in if they have an ID
-            } catch (e) {
-                console.warn('Could not parse user data:', e);
-            }
-        }
-
-        // If user is logged in, DO NOT prefill - let Shopify use the account info
-        if (isLoggedIn) {
-            return checkoutUrl;
-        }
-
-        // For guest checkout, prefill if we have delivery info
-        if (!deliveryInfo) return checkoutUrl;
-
-        const fullName = String(deliveryInfo.fullName || '').trim();
-        const nameParts = fullName.split(/\s+/).filter(Boolean);
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-
-        const street = String(deliveryInfo.street || '').trim();
-        const city = String(deliveryInfo.city || '').trim();
-        const zip = String(deliveryInfo.zip || '').trim();
-        const country = String(deliveryInfo.country || 'France').trim();
-
-        if (!street && !city && !zip && !firstName && !lastName) {
-            return checkoutUrl;
-        }
-
-        try {
-            const url = new URL(checkoutUrl);
-            if (firstName) url.searchParams.set('checkout[shipping_address][first_name]', firstName);
-            if (lastName) url.searchParams.set('checkout[shipping_address][last_name]', lastName);
-            if (street) url.searchParams.set('checkout[shipping_address][address1]', street);
-            if (zip) url.searchParams.set('checkout[shipping_address][zip]', zip);
-            if (city) url.searchParams.set('checkout[shipping_address][city]', city);
-            if (country) url.searchParams.set('checkout[shipping_address][country]', country);
-            return url.toString();
-        } catch {
-            return checkoutUrl;
-        }
-    },
-
-    async getCheckoutUrlWithCustomOptions(note = '', deliveryInfo = null) {
-        if (!this.cart || !this.cart.checkoutUrl) return null;
-
-        const lines = this.cart.lines?.edges || [];
-        if (lines.length === 0) return this.cart.checkoutUrl;
-
-        const cartOptions = JSON.parse(localStorage.getItem('shopify_cart_options') || '{}');
+        const p = loader.querySelector('p');
+        p.style.cssText = `
+            font-size: 0.95rem;
+            color: #888;
+            margin: 0;
+        `;
         
-        // Get customer ID if user is logged in
-        const userStr = localStorage.getItem('fleuriste_user');
-        let customerId = null;
-        let isLoggedIn = false;
-        if (userStr) {
-            try {
-                const user = JSON.parse(userStr);
-                if (user.id) {
-                    isLoggedIn = true;
-                    // Extract numeric ID from Shopify GraphQL ID format (gid://shopify/Customer/123456789)
-                    customerId = user.id.includes('/') ? user.id.split('/').pop() : user.id;
+        // Add keyframes for spinner animation
+        if (!document.getElementById('checkout-loader-styles')) {
+            const style = document.createElement('style');
+            style.id = 'checkout-loader-styles';
+            style.textContent = `
+                @keyframes checkout-spin {
+                    to { transform: rotate(360deg); }
                 }
-            } catch (e) {
-                console.warn('Could not parse user data:', e);
-            }
-        }
-
-        // Check if there are any options (custom or paid)
-        const hasAnyOptions = lines.some(edge => {
-            const itemOptions = cartOptions[edge.node.id] || [];
-            return Array.isArray(itemOptions) && itemOptions.length > 0;
-        });
-        
-        // Check if this is a Point Relais delivery (no address needed)
-        const isPointRelais = deliveryInfo && deliveryInfo.mode === 'france' && deliveryInfo.subMode === 'relais';
-
-        // Always use Draft Order if:
-        // 1. There are custom options (to preserve them)
-        // 2. User is logged in with customerId (to link order to existing customer)
-        // EXCEPT for Point Relais without options - use standard checkout to avoid address form
-        if (!hasAnyOptions && (!customerId || isPointRelais)) {
-            // Use standard Shopify checkout if NO options and (guest OR point relais)
-            return this.buildCheckoutPrefillUrl(this.cart.checkoutUrl, isPointRelais ? null : deliveryInfo);
-        }
-        
-        try {
-            const payloadLines = lines.map(edge => {
-                const node = edge.node;
-                const variantId = String(node.merchandise?.id || '').split('/').pop();
-                return {
-                    variantId,
-                    quantity: node.quantity,
-                    title: node.merchandise?.product?.title || 'Produit',
-                    options: cartOptions[node.id] || []
-                };
-            });
-
-            // Use BackendAPI for the request
-            let result;
-            if (typeof BackendAPI !== 'undefined') {
-                result = await BackendAPI.createCustomCheckout(payloadLines, note, deliveryInfo, customerId);
-            } else {
-                // Fallback to direct fetch
-                const response = await fetch('https://myflowers-shop.fr/api/checkout/custom', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lines: payloadLines, note, deliveryInfo, customerId })
-                });
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || 'custom checkout request failed');
-                }
-                result = await response.json();
-            }
-
-            if (result.checkoutUrl) {
-                return result.checkoutUrl;
-            }
-        } catch (error) {
-            // Fallback to Shopify cart checkout
-        }
-
-        return this.buildCheckoutPrefillUrl(this.cart.checkoutUrl, deliveryInfo);
-    },
-    
-    /**
-     * Load Cart from Storage
-     */
-    loadCartFromStorage() {
-        const savedCartId = localStorage.getItem('shopify_cart_id');
-        if (savedCartId && this.cart) {
-            this.updateCartUI();
-        }
-    },
-    
-    /**
-     * View Product (NAVIGATE TO PAGE)
-     */
-    viewProduct(handle) {
-        // Redirection vers la page produit avec le filtre actuel
-        const filterParam = this.currentFilter !== 'all' ? `&filter=${this.currentFilter}` : '';
-        window.location.href = `boutique.html?product=${handle}${filterParam}`;
-    },
-    
-    /**
-     * Create Variant Selector
-     */
-    createVariantSelector(variants, productHandle = '') {
-        // Récupérer toutes les options
-        const options = {};
-        variants.forEach(edge => {
-            edge.node.selectedOptions.forEach(option => {
-                if (!options[option.name]) {
-                    options[option.name] = new Set();
-                }
-                options[option.name].add(option.value);
-            });
-        });
-
-        // Build a map of option value -> availability
-        const variantAvailability = {};
-        variants.forEach(edge => {
-            const v = edge.node;
-            const isAvailable = v.availableForSale && !(v.quantityAvailable !== null && v.quantityAvailable <= 0);
-            v.selectedOptions.forEach(opt => {
-                const key = `${opt.name}::${opt.value}`;
-                // If any variant with this option value is available, mark as available
-                if (variantAvailability[key] === undefined) {
-                    variantAvailability[key] = isAvailable;
-                } else {
-                    variantAvailability[key] = variantAvailability[key] || isAvailable;
-                }
-            });
-        });
-        
-        // Mapping des couleurs par produit
-        let colorMap = {
-            'Caramel': '#8B5A2B',
-            'Beige Clair': '#C4A878'
-        };
-        
-        // Couleurs spécifiques pour le Teddy 80cm
-        if (productHandle === 'teddy') {
-            colorMap = {
-                'Caramel': '#8B5A2B',
-                'Beige Clair': '#E8D8B8'
-            };
-        }
-        
-        return Object.entries(options).map(([name, values]) => {
-            // Si c'est une option "Couleur", afficher des ronds cliquables
-            if (name.toLowerCase().includes('couleur') || name.toLowerCase().includes('color')) {
-                return `
-                    <div class="variant-option">
-                        <label>${name}</label>
-                        <div class="color-selector">
-                            ${[...values].map((value, idx) => {
-                                const hexColor = this.getColorHexFromName(value);
-                                const isAvailable = variantAvailability[`${name}::${value}`] !== false;
-                                return `
-                                    <button class="color-button ${idx === 0 ? 'selected' : ''} ${!isAvailable ? 'out-of-stock' : ''}" 
-                                            data-option="${name}" 
-                                            data-value="${value}"
-                                            data-available="${isAvailable}"
-                                            style="background-color: ${hexColor}${!isAvailable ? ';opacity:0.4;cursor:not-allowed;' : ''}"
-                                            title="${value}${!isAvailable ? ' (Rupture de stock)' : ''}"
-                                            ${!isAvailable ? 'disabled' : ''}>
-                                        ${!isAvailable ? '<span style="position:absolute;top:50%;left:-2px;right:-2px;height:2px;background:#333;transform:rotate(-45deg);"></span>' : ''}
-                                    </button>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-            
-            // Sinon, utiliser une liste déroulante classique
-            return `
-                <div class="variant-option">
-                    <label>${name}</label>
-                    <select class="variant-select" data-option="${name}">
-                        ${[...values].map(value => {
-                            const isAvailable = variantAvailability[`${name}::${value}`] !== false;
-                            return `
-                                <option value="${value}" ${!isAvailable ? 'disabled' : ''}>${value}${!isAvailable ? ' (Rupture)' : ''}</option>
-                            `;
-                        }).join('')}
-                    </select>
-                </div>
             `;
-        }).join('');
+            document.head.appendChild(style);
+        }
+        
+        document.body.appendChild(loader);
     },
     
-    /**
-     * Render Custom Product Options (Ymq-style)
-     */
-    async renderCustomOptions(productHandle, productId = null) {
-        // Check if ProductOptions system is loaded
-        if (typeof ProductOptions === 'undefined') {
-            return '';
+    hideCheckoutLoader() {
+        const loader = document.getElementById('checkout-loader-overlay');
+        if (loader) {
+            loader.remove();
         }
-        
-        // Store base price for later calculations
-        this._basePrice = parseFloat(this.products.find(p => p.handle === productHandle)?.priceRange.minVariantPrice.amount || 0);
-        
-        // Try to load options (will check local config first, then Ymq if productId provided)
-        const optionsHTML = await ProductOptions.renderOptions(productHandle, productId);
-        
-        return optionsHTML || '';
-    },
-    
-    /**
-     * Get Color Hex from French Color Name
-     */
-    getColorHexFromName(colorName) {
-        const colorMap = {
-            // Marrons et taupes
-            'marron': '#8B4513',
-            'brun': '#8B4513',
-            'caramel': '#8B5A2B',
-            'chocolat': '#7B3F00',
-            'taupe': '#8B8680',
-            'beige': '#D2B48C',
-            'beige clair': '#D2B48C',
-            'crème': '#FFFDD0',
-            'crema': '#FFFDD0',
-            'sable': '#C2B280',
-            
-            // Roses
-            'rose': '#FFB6C1',
-            'rose clair': '#FFB6D9',
-            'rose foncé': '#C71585',
-            'rose pâle': '#FFB6C1',
-            'rose poudré': '#F8BBD0',
-            'fuchsia': '#FF00FF',
-            'magenta': '#FF00FF',
-            
-            // Rouges
-            'rouge': '#FF0000',
-            'rouge foncé': '#8B0000',
-            'rouge clair': '#FF6B6B',
-            'bordeaux': '#800020',
-            'lie de vin': '#722F37',
-            'vermillon': '#FF4500',
-            
-            // Bleus
-            'bleu': '#0000FF',
-            'bleu clair': '#87CEEB',
-            'bleu foncé': '#00008B',
-            'bleu marine': '#000080',
-            'bleu ciel': '#87CEEB',
-            'bleu électrique': '#7F00FF',
-            'turquoise': '#40E0D0',
-            'cyan': '#00FFFF',
-            
-            // Verts
-            'vert': '#008000',
-            'vert clair': '#90EE90',
-            'vert foncé': '#006400',
-            'vert menthe': '#98FF98',
-            'vert olive': '#808000',
-            'vert émeraude': '#50C878',
-            'salade': '#7FFF00',
-            
-            // Jaunes et oranges
-            'jaune': '#FFFF00',
-            'jaune clair': '#FFFFE0',
-            'jaune foncé': '#FFD700',
-            'or': '#FFD700',
-            'orange': '#FFA500',
-            'orange clair': '#FFDAB9',
-            'abricot': '#FBCF60',
-            'pêche': '#FFDAB9',
-            
-            // Violets et mauves
-            'violet': '#8B00FF',
-            'mauve': '#E0B0FF',
-            'lavande': '#E6E0E6',
-            'lilas': '#C8A2C8',
-            'prune': '#6F2DA8',
-            
-            // Blancs et gris
-            'blanc': '#FFFFFF',
-            'ivoire': '#FFFFF0',
-            'gris': '#808080',
-            'gris clair': '#D3D3D3',
-            'gris foncé': '#A9A9A9',
-            'ardoise': '#708090',
-            'gris souris': '#909090',
-            'gris perle': '#E5E1E6',
-            
-            // Noirs
-            'noir': '#000000',
-            'charbon': '#36454F',
-            
-            // Spéciaux
-            'nude': '#E4B69D',
-            'peau': '#E4B69D',
-            'corail': '#FF7F50',
-            'saumon': '#FA8072',
-            'crevette': '#FBAED2',
-            'champagne': '#F7E7CE',
-            'écru': '#F1EDD0',
-            'ciel': '#87CEEB',
-            'turquoise': '#40E0D0',
-        };
-        
-        // Normaliser le nom (minuscules, sans espaces extras)
-        const normalizedName = colorName.trim().toLowerCase();
-        
-        // Chercher une correspondance exacte
-        if (colorMap[normalizedName]) {
-            return colorMap[normalizedName];
-        }
-        
-        // Chercher une correspondance partielle
-        for (const [key, hex] of Object.entries(colorMap)) {
-            if (normalizedName.includes(key) || key.includes(normalizedName)) {
-                return hex;
-            }
-        }
-        
-        // Défaut: gris si couleur non trouvée
-        return '#CCCCCC';
     },
 
-    /**
-     * Show Notification
-     */
+    // ===================================
+    // Add note to Shopify cart
+    // ===================================
+    async addCartNote(note) {
+        if (typeof ShopifyIntegration === 'undefined' || !ShopifyIntegration.cart) return;
+
+        try {
+            const mutation = `
+                mutation($cartId: ID!, $note: String) {
+                    cartNoteUpdate(cartId: $cartId, note: $note) {
+                        cart { id }
+                    }
+                }
+            `;
+            await ShopifyIntegration.graphqlRequest(mutation, {
+                cartId: ShopifyIntegration.cart.id,
+                note: note
+            });
+        } catch (error) {
+            console.log('Note update skipped:', error.message);
+        }
+    },
+
+    // ===================================
+    // Show Notification
+    // ===================================
     showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.innerHTML = `
-            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-            <span>${message}</span>
-        `;
-        document.body.appendChild(notification);
-        
-        setTimeout(() => notification.classList.add('show'), 100);
+        const existing = document.querySelector('.notification');
+        if (existing) existing.remove();
+
+        const notif = document.createElement('div');
+        notif.className = `notification notification-${type} show`;
+        const icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' };
+        notif.innerHTML = `<i class="fas ${icons[type]}"></i><span>${message}</span>`;
+        document.body.appendChild(notif);
+
         setTimeout(() => {
-            notification.classList.remove('show');
-            setTimeout(() => notification.remove(), 300);
-        }, 3000);
-    },    
-    /**
-     * Display Featured Products
-     */
-    displayFeaturedProducts() {
-        const grid = document.getElementById('featured-products');
-        if (!grid) return;
-        
-        let featured = [];
-        
-        // Use admin-configured featured products if available
-        if (this.featuredProducts && this.featuredProducts.length > 0) {
-            featured = this.products.filter(p => {
-                const numericId = p.id.split('/').pop();
-                return this.featuredProducts.includes(numericId);
-            });
-        }
-        
-        // Fallback ONLY if no admin selection exists at all
-        if (featured.length === 0) {
-            featured = this.products.filter(p => 
-                p.tags.includes('featured') || p.tags.includes('nouveau') || p.tags.includes('promo')
-            ).slice(0, 6);
-            
-            if (featured.length === 0) {
-                featured = this.products.slice(0, 6);
-            }
-        }
-        
-        // Filter out hidden products
-        if (this.hiddenProducts && this.hiddenProducts.length > 0) {
-            featured = featured.filter(p => {
-                const numericId = p.id.split('/').pop();
-                return !this.hiddenProducts.includes(numericId);
-            });
-        }
-        
-        if (featured.length === 0) {
-            grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center;">Aucun produit disponible</p>';
-            return;
-        }
-        
-        grid.innerHTML = featured.map(product => this.createProductCard(product)).join('');
-        
-        if (typeof AOS !== 'undefined') AOS.refresh();
-    },
-    
-    /**
-     * Display Products (Shop Page)
-     */
-    displayProducts() {
-        const grid = document.getElementById('products-grid');
-        const pagination = document.getElementById('pagination');
-        const resultsCount = document.getElementById('resultsCount');
-        
-        if (!grid) return;
-        
-        let filteredProducts = this.getFilteredAndSortedProducts();
-        
-        if (resultsCount) {
-            resultsCount.textContent = `${filteredProducts.length} produit${filteredProducts.length > 1 ? 's' : ''} trouvé${filteredProducts.length > 1 ? 's' : ''}`;
-        }
-        
-        const start = (this.currentPage - 1) * this.productsPerPage;
-        const end = start + this.productsPerPage;
-        const paginatedProducts = filteredProducts.slice(start, end);
-        
-        if (paginatedProducts.length === 0) {
-            const message = this.products.length === 0
-                ? `<div class="no-products" style="grid-column: 1 / -1; text-align: center; padding: 4rem 2rem;">
-                    <i class="fas fa-exclamation-circle" style="font-size: 3rem; color: var(--primary); margin-bottom: 1rem;"></i>
-                    <h3>Impossible de charger les produits</h3>
-                    <p style="color: var(--text-light);">Une erreur est survenue. Veuillez rafraîchir la page.</p>
-                    <button onclick="window.location.reload()" class="btn btn-primary" style="margin-top:1rem;">Réessayer</button>
-                  </div>`
-                : `<div class="no-products" style="grid-column: 1 / -1; text-align: center; padding: 4rem 2rem;">
-                    <i class="fas fa-search" style="font-size: 3rem; color: var(--primary); margin-bottom: 1rem;"></i>
-                    <h3>Aucun produit trouvé</h3>
-                    <p style="color: var(--text-light);">Essayez de changer de filtre ou de recherche</p>
-                  </div>`;
-            grid.innerHTML = message;
-            if (pagination) pagination.style.display = 'none';
-        } else {
-            grid.innerHTML = paginatedProducts.map(product => this.createProductCard(product)).join('');
-            
-            if (pagination && filteredProducts.length > this.productsPerPage) {
-                this.updatePagination(filteredProducts.length);
-                pagination.style.display = 'flex';
-            } else if (pagination) {
-                pagination.style.display = 'none';
-            }
-        }
-        
-        if (typeof AOS !== 'undefined') AOS.refresh();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-    
-    /**
-     * Create Product Card
-     */
-    createProductCard(product) {
-        const price = parseFloat(product.priceRange.minVariantPrice.amount);
-        const currency = product.priceRange.minVariantPrice.currencyCode;
-        const formattedPrice = new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: currency
-        }).format(price);
-        
-        // Check for compare at price (prix barré)
-        const firstVariant = product.variants.edges[0]?.node;
-        const compareAtPrice = firstVariant?.compareAtPriceV2 ? parseFloat(firstVariant.compareAtPriceV2.amount) : null;
-        const hasDiscount = compareAtPrice && compareAtPrice > price;
-        const formattedComparePrice = hasDiscount ? new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: currency
-        }).format(compareAtPrice) : '';
-        
-        const image = product.images.edges[0]?.node.url || 'https://via.placeholder.com/400x400?text=No+Image';
-        const imageAlt = product.images.edges[0]?.node.altText || product.title;
-        
-        const isNew = product.tags.includes('nouveau') || product.tags.includes('new');
-        const isPromo = product.tags.includes('promo') || product.tags.includes('promotion') || hasDiscount;
-        const isProductOutOfStock = product.variants.edges.every(v => !v.node.availableForSale || (v.node.quantityAvailable !== null && v.node.quantityAvailable <= 0));
-        
-        // Calculate discount percentage for badge
-        let promoBadgeText = 'Promo';
-        if (hasDiscount) {
-            const discountPercent = Math.round(((compareAtPrice - price) / compareAtPrice) * 100);
-            promoBadgeText = `-${discountPercent}%`;
-        }
-        
-        const badge = isProductOutOfStock ? '<div class="product-badge" style="background: #888;">Rupture de stock</div>' :
-                      isNew ? '<div class="product-badge">Nouveau</div>' : 
-                      isPromo ? `<div class="product-badge" style="background: #ef4444;">${promoBadgeText}</div>` : '';
-
-        // Check if user is logged in for favorites
-        const user = JSON.parse(localStorage.getItem('fleuriste_user') || 'null');
-        const favKey = user ? 'fleuriste_favorites_' + user.id : null;
-        const favorites = favKey ? JSON.parse(localStorage.getItem(favKey) || '[]') : [];
-        const isFav = favorites.some(f => f.id === product.id);
-        const favClass = isFav ? 'fav-btn active' : 'fav-btn';
-        
-        const priceHTML = hasDiscount
-            ? `<span class="price-compare">${formattedComparePrice}</span> <span class="price-current">${formattedPrice}</span>`
-            : formattedPrice;
-        
-        return `
-            <div class="product-card" data-aos="fade-up">
-                <div class="product-image" onclick="ShopifyIntegration.viewProduct('${product.handle}')">
-                    <img src="${image}" alt="${imageAlt}" loading="lazy">
-                    ${badge}
-                </div>
-                <button class="${favClass}" onclick="event.stopPropagation(); ShopifyIntegration.toggleFavorite('${product.id}', '${product.title.replace(/'/g, "\\'")}', '${price}', '${image}')" title="Ajouter aux favoris">
-                    <i class="${isFav ? 'fas' : 'far'} fa-heart"></i>
-                </button>
-                <div class="product-info">
-                    <h3 class="product-title">${product.title}</h3>
-                    <p class="product-description">${this.truncateText(product.description, 100)}</p>
-                    <div class="product-price">${priceHTML}</div>
-                    <div class="product-actions">
-                        <button class="btn btn-primary" onclick="ShopifyIntegration.viewProduct('${product.handle}')">
-                            <span>Voir détails</span>
-                            <i class="fas fa-arrow-right"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    },
-    
-    /**
-     * Get Filtered and Sorted Products
-     */
-    getFilteredAndSortedProducts() {
-        let filtered = [...this.products];
-        
-        // Filter out hidden products
-        if (this.hiddenProducts && this.hiddenProducts.length > 0) {
-            filtered = filtered.filter(p => {
-                const numericId = p.id.split('/').pop();
-                return !this.hiddenProducts.includes(numericId);
-            });
-        }
-        
-        // Collection-based filtering (from Shopify)
-        if (this.currentFilter !== 'all') {
-            if (this.currentFilter.startsWith('collection:')) {
-                const handle = this.currentFilter.replace('collection:', '');
-                const productIds = this.collectionProductIds[handle] || [];
-                
-                if (productIds.length > 0) {
-                    filtered = filtered.filter(product => productIds.includes(product.id));
-                } else {
-                    filtered = [];
-                }
-            } else {
-                // Legacy keyword-based filtering (fallback)
-                const filterKeywords = {
-                    'bouquets': ['bouquet', 'bouquets', 'fleur', 'fleurs', 'rose rouge', 'composition'],
-                    'rose-sous-cloche': ['rose éternelle', 'roses éternelles', 'rose sous cloche', 'cloche', 'éternelle', 'eternelle'],
-                    'box-kinder': ['box kinder', 'kinder', 'box', 'coffret'],
-                    'peluches': ['peluche', 'peluches', 'teddy', 'nounours', 'ours'],
-                    'accessoires': ['accessoire', 'accessoires', 'vase', 'ruban', 'papillon', 'personnalisation']
-                };
-                
-                const keywords = filterKeywords[this.currentFilter] || [this.currentFilter];
-                
-                filtered = filtered.filter(product => {
-                    const tags = product.tags.map(tag => tag.toLowerCase());
-                    const title = product.title.toLowerCase();
-                    const description = (product.description || '').toLowerCase();
-                    const productType = (product.productType || '').toLowerCase();
-                    
-                    if (tags.includes(this.currentFilter.toLowerCase())) return true;
-                    
-                    return keywords.some(keyword => {
-                        const kw = keyword.toLowerCase();
-                        return tags.some(tag => tag.includes(kw)) ||
-                               title.includes(kw) ||
-                               productType.includes(kw) ||
-                               description.includes(kw);
-                    });
-                });
-            }
-        }
-        
-        if (this.searchQuery) {
-            const query = this.searchQuery.toLowerCase();
-            filtered = filtered.filter(product => 
-                product.title.toLowerCase().includes(query) ||
-                product.description.toLowerCase().includes(query) ||
-                product.tags.some(tag => tag.toLowerCase().includes(query))
-            );
-        }
-        
-        switch (this.currentSort) {
-            case 'price-asc':
-                filtered.sort((a, b) => 
-                    parseFloat(a.priceRange.minVariantPrice.amount) - parseFloat(b.priceRange.minVariantPrice.amount)
-                );
-                break;
-            case 'price-desc':
-                filtered.sort((a, b) => 
-                    parseFloat(b.priceRange.minVariantPrice.amount) - parseFloat(a.priceRange.minVariantPrice.amount)
-                );
-                break;
-            case 'name-asc':
-                filtered.sort((a, b) => a.title.localeCompare(b.title));
-                break;
-            case 'name-desc':
-                filtered.sort((a, b) => b.title.localeCompare(a.title));
-                break;
-            case 'newest':
-                filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                break;
-            default:
-                // Apply custom product order per collection when sorting is "default"
-                if (this.currentFilter && this.currentFilter.startsWith('collection:') && this.collectionProductOrders) {
-                    const handle = this.currentFilter.replace('collection:', '');
-                    const customOrder = this.collectionProductOrders[handle];
-                    if (customOrder && customOrder.length > 0) {
-                        filtered.sort((a, b) => {
-                            const aId = a.id.split('/').pop();
-                            const bId = b.id.split('/').pop();
-                            const aIdx = customOrder.indexOf(aId);
-                            const bIdx = customOrder.indexOf(bId);
-                            // Products not in custom order go to end
-                            const aPosn = aIdx === -1 ? 999999 : aIdx;
-                            const bPosn = bIdx === -1 ? 999999 : bIdx;
-                            return aPosn - bPosn;
-                        });
-                    }
-                }
-                break;
-        }
-        
-        return filtered;
-    },
-    
-    /**
-     * Setup Shop Controls
-     */
-    setupShopControls() {
-        const filterBtns = document.querySelectorAll('.filter-btn');
-        filterBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                filterBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.currentFilter = btn.dataset.filter;
-                this.currentPage = 1;
-                this.displayProducts();
-            });
-        });
-        
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.addEventListener('input', (e) => {
-                this.searchQuery = e.target.value;
-                this.currentPage = 1;
-                this.displayProducts();
-            });
-        }
-        
-        const sortSelect = document.getElementById('sortSelect');
-        if (sortSelect) {
-            sortSelect.addEventListener('change', (e) => {
-                this.currentSort = e.target.value;
-                this.currentPage = 1;
-                this.displayProducts();
-            });
-        }
-        
-        const prevBtn = document.getElementById('prevPage');
-        const nextBtn = document.getElementById('nextPage');
-        
-        if (prevBtn) {
-            prevBtn.addEventListener('click', () => {
-                if (this.currentPage > 1) {
-                    this.currentPage--;
-                    this.displayProducts();
-                }
-            });
-        }
-        
-        if (nextBtn) {
-            nextBtn.addEventListener('click', () => {
-                const filtered = this.getFilteredAndSortedProducts();
-                const maxPages = Math.ceil(filtered.length / this.productsPerPage);
-                if (this.currentPage < maxPages) {
-                    this.currentPage++;
-                    this.displayProducts();
-                }
-            });
-        }
-    },
-    
-    /**
-     * Update Pagination
-     */
-    updatePagination(totalProducts) {
-        const maxPages = Math.ceil(totalProducts / this.productsPerPage);
-        const prevBtn = document.getElementById('prevPage');
-        const nextBtn = document.getElementById('nextPage');
-        const pageNumbers = document.getElementById('pageNumbers');
-        
-        if (!prevBtn || !nextBtn || !pageNumbers) return;
-        
-        prevBtn.disabled = this.currentPage === 1;
-        nextBtn.disabled = this.currentPage === maxPages;
-        
-        let numbersHTML = '';
-        for (let i = 1; i <= maxPages; i++) {
-            if (i === 1 || i === maxPages || (i >= this.currentPage - 1 && i <= this.currentPage + 1)) {
-                numbersHTML += `
-                    <div class="page-number ${i === this.currentPage ? 'active' : ''}" 
-                         onclick="ShopifyIntegration.goToPage(${i})">
-                        ${i}
-                    </div>
-                `;
-            } else if (i === this.currentPage - 2 || i === this.currentPage + 2) {
-                numbersHTML += '<span style="padding: 0 0.5rem;">...</span>';
-            }
-        }
-        pageNumbers.innerHTML = numbersHTML;
-    },
-    
-    /**
-     * Go to Page
-     */
-    goToPage(page) {
-        this.currentPage = page;
-        this.displayProducts();
-    },
-    
-    /**
-     * Toggle Favorite
-     */
-    toggleFavorite(productId, title, price, image) {
-        const user = JSON.parse(localStorage.getItem('fleuriste_user') || 'null');
-        if (!user) {
-            // Afficher juste une notification discrète sans redirection
-            if (typeof AuthSystem !== 'undefined' && AuthSystem.showNotification) {
-                AuthSystem.showNotification('Connectez-vous pour gérer vos favoris', 'error');
-            }
-            return;
-        }
-        const key = 'fleuriste_favorites_' + user.id;
-        let favorites = JSON.parse(localStorage.getItem(key) || '[]');
-        const exists = favorites.findIndex(f => f.id === productId);
-        
-        if (exists >= 0) {
-            favorites.splice(exists, 1);
-            localStorage.setItem(key, JSON.stringify(favorites));
-            if (typeof AuthSystem !== 'undefined' && AuthSystem.showNotification) {
-                AuthSystem.showNotification('Retiré des favoris', 'success');
-            }
-        } else {
-            favorites.push({ id: productId, title, price, image });
-            localStorage.setItem(key, JSON.stringify(favorites));
-            if (typeof AuthSystem !== 'undefined' && AuthSystem.showNotification) {
-                AuthSystem.showNotification('Ajouté aux favoris ♥', 'success');
-            }
-        }
-        
-        // Update heart icon
-        const btn = document.querySelector(`.fav-btn[onclick*="${productId}"]`);
-        if (!btn) {
-            // Refresh all cards
-            if (this.products && this.products.length > 0) {
-                const grid = document.querySelector('.products-grid, .featured-grid');
-                if (grid) {
-                    // Re-render to update heart states
-                    this.displayShopProducts?.();
-                }
-            }
-            return;
-        }
-        const icon = btn.querySelector('i');
-        if (exists >= 0) {
-            btn.classList.remove('active');
-            icon.className = 'far fa-heart';
-        } else {
-            btn.classList.add('active');
-            icon.className = 'fas fa-heart';
-        }
-    },
-
-    /**
-     * Truncate Text
-     */
-    truncateText(text, length) {
-        if (!text) return '';
-        if (text.length <= length) return text;
-        return text.substring(0, length) + '...';
+            notif.classList.remove('show');
+            setTimeout(() => notif.remove(), 300);
+        }, 5000);
     }
 };
 
+// ===================================
+// Initialize on DOM ready
+// ===================================
+document.addEventListener('DOMContentLoaded', () => {
+    DeliverySystem.init();
+});
+
 // Export
-window.ShopifyIntegration = ShopifyIntegration;
+window.DeliverySystem = DeliverySystem;
