@@ -151,16 +151,7 @@ class ShopifyCollectionsManager {
             this.openCollectionModal();
         });
 
-        // Reorder Collections Buttons
-        document.getElementById('reorderCollectionsBtn')?.addEventListener('click', () => {
-            this.enableCollectionsReorderMode();
-        });
-        document.getElementById('saveCollectionsOrderBtn')?.addEventListener('click', () => {
-            this.saveCollectionsOrder();
-        });
-        document.getElementById('cancelCollectionsOrderBtn')?.addEventListener('click', () => {
-            this.cancelCollectionsReorderMode();
-        });
+
 
         // Quick actions
         document.querySelector('[data-action="new-collection"]')?.addEventListener('click', () => {
@@ -326,6 +317,10 @@ class ShopifyCollectionsManager {
             });
         }
         grid.innerHTML = orderedCollections.map(collection => this.getCollectionCardHTML(collection)).join('');
+
+        // Init always-on drag and drop for collections
+        this.initCollectionsDragAndDrop(grid);
+        this.updateCollectionOrderNumbers(grid);
 
         // Add event listeners
         this.collections.forEach(collection => {
@@ -1451,72 +1446,8 @@ class ShopifyCollectionsManager {
     }
 
     // ===================================
-    // REORDER COLLECTIONS (ordre d'affichage)
+    // REORDER COLLECTIONS (toujours actif)
     // ===================================
-
-    enableCollectionsReorderMode() {
-        const grid = document.getElementById('collectionsGrid');
-        if (!grid) return;
-
-        // Sort cards visually by saved order first
-        if (this.collectionsOrder && this.collectionsOrder.length > 0) {
-            const orderMap = {};
-            this.collectionsOrder.forEach((id, idx) => { orderMap[String(id)] = idx; });
-            const cards = Array.from(grid.querySelectorAll('.category-card'));
-            cards.sort((a, b) => {
-                const posA = orderMap[String(a.dataset.collectionId)] !== undefined ? orderMap[String(a.dataset.collectionId)] : 9999;
-                const posB = orderMap[String(b.dataset.collectionId)] !== undefined ? orderMap[String(b.dataset.collectionId)] : 9999;
-                return posA - posB;
-            });
-            cards.forEach(card => grid.appendChild(card));
-        }
-
-        // Save original DOM order for cancel
-        this._originalCollectionsOrder = Array.from(grid.querySelectorAll('.category-card')).map(c => c.dataset.collectionId);
-
-        grid.classList.add('collections-reorder-mode');
-
-        // Show numbers
-        this.updateCollectionOrderNumbers(grid);
-
-        // Show/hide buttons
-        document.getElementById('reorderCollectionsBtn').style.display = 'none';
-        document.getElementById('addCollectionBtn').style.display = 'none';
-        document.getElementById('saveCollectionsOrderBtn').style.display = 'inline-flex';
-        document.getElementById('cancelCollectionsOrderBtn').style.display = 'inline-flex';
-
-        // Init drag and drop on cards
-        this.initCollectionsDragAndDrop(grid);
-    }
-
-    cancelCollectionsReorderMode() {
-        const grid = document.getElementById('collectionsGrid');
-        if (!grid) return;
-
-        // Restore original order
-        if (this._originalCollectionsOrder) {
-            this._originalCollectionsOrder.forEach(id => {
-                const card = grid.querySelector(`[data-collection-id="${id}"]`);
-                if (card) grid.appendChild(card);
-            });
-        }
-
-        this.disableCollectionsReorderMode(grid);
-    }
-
-    disableCollectionsReorderMode(grid) {
-        if (!grid) grid = document.getElementById('collectionsGrid');
-        grid.classList.remove('collections-reorder-mode');
-        this._originalCollectionsOrder = null;
-
-        // Hide numbers
-        grid.querySelectorAll('.collection-order-number').forEach(el => el.textContent = '');
-
-        document.getElementById('reorderCollectionsBtn').style.display = 'inline-flex';
-        document.getElementById('addCollectionBtn').style.display = 'inline-flex';
-        document.getElementById('saveCollectionsOrderBtn').style.display = 'none';
-        document.getElementById('cancelCollectionsOrderBtn').style.display = 'none';
-    }
 
     updateCollectionOrderNumbers(grid) {
         const cards = grid.querySelectorAll('.category-card');
@@ -1529,27 +1460,24 @@ class ShopifyCollectionsManager {
     initCollectionsDragAndDrop(grid) {
         const cards = grid.querySelectorAll('.category-card');
         let draggedItem = null;
-        let placeholder = null;
 
         cards.forEach(card => {
+            const handle = card.querySelector('.collection-drag-handle');
+            if (!handle) return;
+
             card.setAttribute('draggable', 'true');
 
             card.addEventListener('dragstart', (e) => {
                 draggedItem = card;
-                card.classList.add('collection-dragging');
+                setTimeout(() => card.classList.add('collection-dragging'), 0);
                 e.dataTransfer.effectAllowed = 'move';
-
-                placeholder = document.createElement('div');
-                placeholder.className = 'collection-drag-placeholder';
-                placeholder.style.height = card.offsetHeight + 'px';
             });
 
-            card.addEventListener('dragend', () => {
+            card.addEventListener('dragend', async () => {
                 card.classList.remove('collection-dragging');
                 draggedItem = null;
-                if (placeholder && placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
-                placeholder = null;
                 this.updateCollectionOrderNumbers(grid);
+                await this.saveCollectionsOrder();
             });
 
             card.addEventListener('dragover', (e) => {
@@ -1582,8 +1510,7 @@ class ShopifyCollectionsManager {
             if (!response.ok) throw new Error('Erreur sauvegarde');
 
             this.collectionsOrder = newOrder;
-            this.disableCollectionsReorderMode(grid);
-            this.showNotification('Ordre des collections sauvegardé !', 'success');
+            this.showNotification('Ordre sauvegardé !', 'success');
         } catch (error) {
             console.error('Error saving collections order:', error);
             this.showNotification('Erreur lors de la sauvegarde', 'error');
