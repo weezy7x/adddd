@@ -662,11 +662,18 @@
 }
 
 /* ================================
-   COLLECTION CARDS REORDER MODE
+   COLLECTION CARDS REORDER (toujours actif)
    ================================ */
 
+.category-card {
+    position: relative;
+    cursor: grab;
+}
+.category-card:active { cursor: grabbing; }
+
 .collection-drag-handle {
-    display: none;
+    display: flex;
+    align-items: center;
     position: absolute;
     top: 8px;
     left: 8px;
@@ -683,7 +690,7 @@
 .collection-drag-handle:active { cursor: grabbing; }
 
 .collection-order-number {
-    display: none;
+    display: inline-block;
     position: absolute;
     top: 8px;
     right: 8px;
@@ -699,31 +706,9 @@
     line-height: 26px;
 }
 
-.collections-reorder-mode .category-card {
-    cursor: grab;
-    transition: box-shadow 0.2s, transform 0.2s;
-    position: relative;
-}
-.collections-reorder-mode .category-card:hover {
-    box-shadow: 0 4px 16px rgba(91,16,19,0.18);
-    transform: translateY(-2px);
-}
-.collections-reorder-mode .collection-drag-handle {
-    display: flex;
-    align-items: center;
-}
-.collections-reorder-mode .collection-order-number {
-    display: inline-block;
-}
-.collections-reorder-mode .category-card.collection-dragging {
+.category-card.collection-dragging {
     opacity: 0.45;
     transform: scale(0.97);
     box-shadow: 0 2px 8px rgba(91,16,19,0.2);
     cursor: grabbing;
-}
-.collection-drag-placeholder {
-    background: #fef2f2;
-    border: 2px dashed #5B1013;
-    border-radius: 12px;
-    margin-bottom: 8px;
 }
