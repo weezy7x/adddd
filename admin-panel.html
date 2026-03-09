@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>Panel Admin - My Flowers</title>
+    <meta name="robots" content="noindex, nofollow">
+    
+    <link rel="icon" type="image/png" href="favicon.png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;500;600&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css?v=2.0">
+    
+    <link rel="stylesheet" href="style.css?v=2.0">
+    <link rel="stylesheet" href="account-styles.css?v=2.0">
+    <link rel="stylesheet" href="admin-styles.css?v=2.0">
+    <link rel="stylesheet" href="collections-manager.css?v=2.0">
+    <link rel="stylesheet" href="products-manager.css?v=2.0">
+    <link rel="stylesheet" href="admin-mobile.css?v=2.0">
+    <link rel="stylesheet" href="mobile-popups.css?v=2.0">
+    
+    <script>
+        (function() {
+            // Check if user is logged in via Shopify customer system
+            const userStr = localStorage.getItem('fleuriste_user');
+            if (!userStr) {
+                // Show message and link instead of redirect (works better with file://)
+                document.addEventListener('DOMContentLoaded', function() {
+                    document.body.style.display = '';
+                    document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:Montserrat,sans-serif;text-align:center;padding:2rem;background:#f9fafb;"><div style="background:white;padding:3rem;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);max-width:400px;"><img src="logo.png" alt="My Flowers" style="height:50px;margin-bottom:1.5rem;"><h1 style="color:#1f2937;font-size:1.5rem;margin-bottom:0.5rem;">Accès Restreint</h1><p style="color:#6b7280;margin-bottom:1.5rem;">Vous devez être connecté pour accéder au panel admin.</p><a href="compte.html" style="display:inline-block;padding:0.75rem 2rem;background:linear-gradient(135deg,#5B1013 0%,#7a1a1d 100%);color:white;text-decoration:none;border-radius:8px;font-weight:500;">Se connecter</a></div></div>';
+                });
+                return; // Stop execution
+            }
+        })();
+    </script>
+</head>
+<body class="admin-panel" style="display: none;">
+    <header class="admin-header">
+        <div class="admin-header-left">
+            <button class="sidebar-toggle" id="sidebarToggle">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="admin-branding" id="adminBrandingHome" style="cursor: pointer;">
+                <img src="logo.png" alt="My Flowers" style="height: 32px; width: auto; margin-right: 0.75rem;">
+                <div>
+                    <strong>My Flowers</strong>
+                    <span>Panel Admin</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="admin-header-right">
+            <button class="header-btn" id="viewSiteBtn" title="Voir le site">
+                <i class="fas fa-external-link-alt"></i>
+                <span>Voir le site</span>
+            </button>
+            
+            <div class="admin-notifications" id="adminNotifications">
+                <button class="header-btn notifications-btn">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge" id="notifBadge" style="display:none;">0</span>
+                </button>
+                <div class="notifications-dropdown">
+                    <div class="notifications-header">
+                        <h4>Notifications</h4>
+                        <button class="mark-all-read" id="markAllReadBtn">Tout marquer comme lu</button>
+                    </div>
+                    <div class="notifications-list" id="notificationsList">
+                        <div style="text-align:center;padding:2rem;color:#6b7280;">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Chargement...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="admin-user-menu">
+                <button class="header-btn user-menu-btn">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="adminUserName">Admin</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="user-menu-dropdown">
+                    <a href="dashboard.html#profile" class="user-menu-item">
+                        <i class="fas fa-user"></i>
+                        <span>Mon profil</span>
+                    </a>
+                    <a href="index.html" class="user-menu-item" id="viewSiteBtnMenu">
+                        <i class="fas fa-external-link-alt"></i>
+                        <span>Voir le site</span>
+                    </a>
+                    <div class="user-menu-divider"></div>
+                    <a href="#" class="user-menu-item" id="adminLogout">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Déconnexion</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <div class="admin-layout">
+        <aside class="admin-sidebar" id="adminSidebar">
+            <nav class="admin-nav">
+                <a href="#" class="admin-nav-item active" data-section="dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Tableau de bord</span>
+                </a>
+                <a href="#" class="admin-nav-item" data-section="orders">
+                    <i class="fas fa-shopping-bag"></i>
+                    <span>Commandes</span>
+                </a>
+                <a href="#" class="admin-nav-item" data-section="collections">
+                    <i class="fas fa-folder"></i>
+                    <span>Collections</span>
+                </a>
+                <a href="#" class="admin-nav-item" data-section="products">
+                    <i class="fas fa-box"></i>
+                    <span>Produits</span>
+                </a>
+                <a href="#" class="admin-nav-item" data-section="delivery">
+                    <i class="fas fa-calendar"></i>
+                    <span>Gestion des dates</span>
+                </a>
+                
+                <div class="nav-divider"></div>
+                
+                <a href="https://admin.shopify.com/" target="_blank" class="admin-nav-item" style="opacity: 0.7;">
+                    <i class="fas fa-external-link-alt"></i>
+                    <span>Shopify Admin</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="mode-indicator">
+                    <i class="fas fa-circle" style="color: #22c55e;"></i>
+                    <span>Connecté</span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="admin-main">
+            <section class="admin-section active" id="dashboardSection">
+                <div class="section-header">
+                    <div>
+                        <h1>Tableau de bord</h1>
+                        <p>Vue d'ensemble de votre boutique</p>
+                    </div>
+                </div>
+
+                <div class="stats-grid-admin">
+                    <div class="stat-card-admin">
+                        <div class="stat-card-header">
+                            <span class="stat-label">Chiffre d'affaires</span>
+                            <i class="fas fa-euro-sign stat-icon"></i>
+                        </div>
+                        <div class="stat-value" id="statRevenue">0.00€</div>
+                    </div>
+
+                    <div class="stat-card-admin">
+                        <div class="stat-card-header">
+                            <span class="stat-label">Commandes</span>
+                            <i class="fas fa-shopping-bag stat-icon"></i>
+                        </div>
+                        <div class="stat-value" id="statOrders">0</div>
+                    </div>
+
+                    <div class="stat-card-admin">
+                        <div class="stat-card-header">
+                            <span class="stat-label">Panier moyen</span>
+                            <i class="fas fa-chart-line stat-icon"></i>
+                        </div>
+                        <div class="stat-value" id="statAvgOrder">0.00€</div>
+                    </div>
+                </div>
+
+                <div class="quick-actions">
+                    <h3>Actions rapides</h3>
+                    <div class="quick-actions-grid">
+                        <button class="quick-action-btn" data-action="new-category">
+                            <i class="fas fa-folder-plus"></i>
+                            <span>Nouvelle catégorie</span>
+                        </button>
+                        <button class="quick-action-btn" data-action="process-orders">
+                            <i class="fas fa-tasks"></i>
+                            <span>Voir les commandes</span>
+                        </button>
+                        <button class="quick-action-btn" data-action="manage-categories">
+                            <i class="fas fa-folder"></i>
+                            <span>Gérer les catégories</span>
+                        </button>
+                        <button class="quick-action-btn" onclick="window.open('https://admin.shopify.com/', '_blank')">
+                            <i class="fas fa-external-link-alt"></i>
+                            <span>Shopify Admin</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <h3>Dernières commandes</h3>
+                            <a href="#" class="view-all" data-section="orders">Voir tout</a>
+                        </div>
+                        <div id="recentOrdersAdmin" class="recent-orders-list">
+                            </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <h3>Alertes & Notifications</h3>
+                        </div>
+                        <div class="alerts-list" id="dashboardAlerts">
+                            <div style="text-align:center;padding:2rem;color:#6b7280;">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Chargement des alertes...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="admin-section" id="ordersSection">
+                <div class="section-header">
+                    <div>
+                        <h1>Gestion des commandes</h1>
+                        <p>Gérez et suivez toutes les commandes</p>
+                    </div>
+                    <div class="section-actions">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="orderSearch" placeholder="Rechercher une commande...">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="order-filters">
+                    <button class="filter-chip active" data-status="all">
+                        Toutes
+                    </button>
+                    <button class="filter-chip" data-status="unfulfilled">
+                        Non traitées
+                    </button>
+                    <button class="filter-chip" data-status="fulfilled">
+                        Traitées
+                    </button>
+                </div>
+
+                <div class="data-table-container">
+                    <table class="data-table" id="ordersTable">
+                        <thead>
+                            <tr>
+                                <th>Commande</th>
+                                <th>Date</th>
+                                <th>Client</th>
+                                <th>Produits</th>
+                                <th>Total</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ordersTableBody">
+                            </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="admin-section" id="collectionsSection">
+                <div class="section-header">
+                    <div>
+                        <h1><i class="fas fa-folder"></i> Gestion des Collections</h1>
+                    </div>
+                    <div class="section-actions" id="collectionsActions">
+                        <button id="reorderCollectionsBtn" class="btn btn-secondary">
+                            <i class="fas fa-sort"></i>
+                            <span>Réorganiser</span>
+                        </button>
+                        <button id="saveCollectionsOrderBtn" class="btn btn-primary" style="display:none;">
+                            <i class="fas fa-check"></i>
+                            <span>Sauvegarder l'ordre</span>
+                        </button>
+                        <button id="cancelCollectionsOrderBtn" class="btn btn-secondary" style="display:none;">
+                            <i class="fas fa-times"></i>
+                            <span>Annuler</span>
+                        </button>
+                        <button id="addCollectionBtn" class="btn btn-primary">
+                            <i class="fas fa-plus"></i>
+                            <span>Ajouter une collection</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="categories-container">
+                    <div class="categories-grid" id="collectionsGrid">
+                        </div>
+                </div>
+            </section>
+
+            <section class="admin-section" id="productsSection">
+                <div class="section-header">
+                    <div>
+                        <h1><i class="fas fa-box"></i> Gestion des Produits</h1>
+                    </div>
+                    <div class="section-actions">
+                        <button id="addProductBtn" class="btn btn-primary">
+                            <i class="fas fa-plus"></i>
+                            <span>Ajouter un produit</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="product-filters-row">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="productSearchInput" placeholder="Rechercher un produit...">
+                    </div>
+                    <div class="product-filter-select-wrapper">
+                        <select id="productCollectionFilter">
+                            <option value="all">Toutes les collections</option>
+                        </select>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+
+                <div class="admin-products-grid" id="productsGrid">
+                    </div>
+            </section>
+
+            <section class="admin-section" id="deliverySection">
+                <div class="section-header">
+                    <div>
+                        <h1><i class="fas fa-calendar"></i> Gestion des plannings</h1>
+                        <p>Gérez les dates indisponibles pour livraison et retrait</p>
+                    </div>
+                </div>
+
+                <div style="background: white; border-radius: 12px 12px 0 0; padding: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: -1px;">
+                    <div style="display: flex; border-bottom: 2px solid #e5e7eb;">
+                        <button class="delivery-tab active" data-tab="delivery" style="flex: 1; padding: 1rem 1.5rem; border: none; background: transparent; font-weight: 600; font-size: 1rem; color: #6b7280; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
+                            <i class="fas fa-truck"></i> Planning Livraison
+                        </button>
+                        <button class="delivery-tab" data-tab="pickup" style="flex: 1; padding: 1rem 1.5rem; border: none; background: transparent; font-weight: 600; font-size: 1rem; color: #6b7280; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
+                            <i class="fas fa-store"></i> Planning Retrait en Boutique
+                        </button>
+                    </div>
+                </div>
+
+                <div id="deliveryTabContent" class="tab-content active" style="background: white; border-radius: 0 0 12px 12px; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div>
+                            <h3 style="margin-bottom: 1rem; color: #1f2937; font-size: 1.1rem;">
+                                <i class="fas fa-calendar-plus"></i> Dates indisponibles - Livraison
+                            </h3>
+                            
+                            <div style="background: linear-gradient(135deg, #5B1013 0%, #8B1518 100%); color: white; padding: 1rem; border-radius: 12px 12px 0 0; display: flex; align-items: center; justify-content: space-between;">
+                                <button id="prevMonthBtnDelivery" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                                    <i class="fas fa-chevron-left"></i>
+                                </button>
+                                <div style="text-align: center;">
+                                    <div id="calendarMonthYearDelivery" style="font-size: 1.25rem; font-weight: 600;">Février 2026</div>
+                                    <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem;">Cliquez pour marquer indisponible</div>
+                                </div>
+                                <button id="nextMonthBtnDelivery" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                                    <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+
+                            <div style="background: #f9fafb; padding: 1rem; border-radius: 0 0 12px 12px; border: 1px solid #e5e7eb;">
+                                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Lun</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Mar</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Mer</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Jeu</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Ven</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Sam</div>
+                                    <div style="text-align: center; font-weight: 600; color: #dc2626; font-size: 0.85rem; padding: 0.5rem;">Dim</div>
+                                </div>
+                                <div id="calendarDaysGridDelivery" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem;">
+                                    </div>
+                            </div>
+
+                            <div style="margin-top: 1rem; padding: 0.75rem; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 0.85rem; color: #1e40af;">
+                                <i class="fas fa-info-circle"></i> <strong>Planning livraison locale</strong> - Jours passés et dimanches désactivés automatiquement.
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 style="margin-bottom: 1rem; color: #1f2937; font-size: 1.1rem;">
+                                <i class="fas fa-list"></i> Dates indisponibles - Livraison
+                            </h3>
+                            <div id="unavailableDatesListDelivery" style="display: grid; gap: 0.75rem; padding-right: 0.5rem;">
+                                <div style="text-align: center; color: #9ca3af; padding: 2rem; background: #f9fafb; border-radius: 8px; border: 2px dashed #e5e7eb;">
+                                    <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5;"></i>
+                                    <p>Aucune date indisponible</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="pickupTabContent" class="tab-content" style="display: none; background: white; border-radius: 0 0 12px 12px; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div>
+                            <h3 style="margin-bottom: 1rem; color: #1f2937; font-size: 1.1rem;">
+                                <i class="fas fa-calendar-plus"></i> Dates indisponibles - Retrait
+                            </h3>
+                            
+                            <div style="background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: white; padding: 1rem; border-radius: 12px 12px 0 0; display: flex; align-items: center; justify-content: space-between;">
+                                <button id="prevMonthBtnPickup" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                                    <i class="fas fa-chevron-left"></i>
+                                </button>
+                                <div style="text-align: center;">
+                                    <div id="calendarMonthYearPickup" style="font-size: 1.25rem; font-weight: 600;">Février 2026</div>
+                                    <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem;">Cliquez pour marquer indisponible</div>
+                                </div>
+                                <button id="nextMonthBtnPickup" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                                    <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+
+                            <div style="background: #f9fafb; padding: 1rem; border-radius: 0 0 12px 12px; border: 1px solid #e5e7eb;">
+                                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Lun</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Mar</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Mer</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Jeu</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Ven</div>
+                                    <div style="text-align: center; font-weight: 600; color: #6b7280; font-size: 0.85rem; padding: 0.5rem;">Sam</div>
+                                    <div style="text-align: center; font-weight: 600; color: #dc2626; font-size: 0.85rem; padding: 0.5rem;">Dim</div>
+                                </div>
+                                <div id="calendarDaysGridPickup" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem;">
+                                    </div>
+                            </div>
+
+                            <div style="margin-top: 1rem; padding: 0.75rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; font-size: 0.85rem; color: #15803d;">
+                                <i class="fas fa-info-circle"></i> <strong>Planning retrait boutique</strong> - Jours passés et dimanches désactivés automatiquement.
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 style="margin-bottom: 1rem; color: #1f2937; font-size: 1.1rem;">
+                                <i class="fas fa-list"></i> Dates indisponibles - Retrait
+                            </h3>
+                            <div id="unavailableDatesListPickup" style="display: grid; gap: 0.75rem; padding-right: 0.5rem;">
+                                <div style="text-align: center; color: #9ca3af; padding: 2rem; background: #f9fafb; border-radius: 8px; border: 2px dashed #e5e7eb;">
+                                    <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5;"></i>
+                                    <p>Aucune date indisponible</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <div class="modal" id="orderDetailsModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content large">
+            <button class="modal-close">
+                <i class="fas fa-times"></i>
+            </button>
+            <div id="orderDetailsContent">
+                </div>
+        </div>
+    </div>
+
+    <div class="modal" id="collectionModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <button class="modal-close">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="modal-header">
+                <h2 id="collectionModalTitle">Ajouter une collection</h2>
+            </div>
+            <div class="modal-body">
+                <form id="collectionForm">
+                    <input type="hidden" id="collectionId">
+                    <input type="hidden" id="collectionHandle">
+                    <input type="hidden" id="collectionIcon" value="fa-tag">
+                    
+                    <div class="form-group">
+                        <label for="collectionTitle">Titre de la collection *</label>
+                        <input type="text" id="collectionTitle" required placeholder="Ex: Bouquets de Roses">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Icône de la collection</label>
+                        <div id="iconSelectorContainer" style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                                <div id="selectedIconPreview" style="width: 50px; height: 50px; background: linear-gradient(135deg, #5B1013, #8B1A1D); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-tag" style="color: #fff; font-size: 1.5rem;"></i>
+                                </div>
+                                <div>
+                                    <div style="font-weight: 600; color: #374151;">Icône sélectionnée</div>
+                                    <div id="selectedIconName" style="font-size: 0.8rem; color: #6b7280;">fa-tag</div>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">Cliquez pour choisir une icône :</div>
+                            <div id="iconGrid" style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 0.5rem; max-height: 200px; overflow-y: auto; padding: 0.25rem;">
+                                </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="collectionDescription">Description</label>
+                        <textarea id="collectionDescription" rows="4" placeholder="Description de la collection..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Image de la collection</label>
+                        <div class="product-image-dropzone" id="collectionImageDropzone" tabindex="0">
+                            <input type="file" id="collectionImageFile" accept="image/*" hidden>
+                            <div class="product-image-dropzone-text" id="collectionImageDropzoneText">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <span>Glisser-déposer une image ici ou cliquer pour choisir</span>
+                            </div>
+                        </div>
+                        <div class="product-images-sections">
+                            <div class="product-images-section">
+                                <h4>Image de la collection</h4>
+                                <div class="product-images-gallery" id="collectionImagesGallery"></div>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelCollectionBtn">Annuler</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i>
+                            <span>Enregistrer</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="productModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <button class="modal-close">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="modal-header">
+                <h2 id="productModalTitle">Ajouter un produit</h2>
+            </div>
+            <div class="modal-body">
+                <form id="productForm">
+                    <input type="hidden" id="productId">
+                    
+                    <div class="form-group">
+                        <label for="productTitle">Titre du produit *</label>
+                        <input type="text" id="productTitle" required placeholder="Ex: Bouquet de Roses Diamants">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="productDescription">Description</label>
+                        <textarea id="productDescription" rows="4" placeholder="Description du produit..."></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="productPrice">Prix (€) *</label>
+                            <input type="number" id="productPrice" required step="0.01" min="0" placeholder="0.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="productComparePrice">Ancien prix (€)</label>
+                            <input type="number" id="productComparePrice" step="0.01" min="0" placeholder="0.00">
+                            <small>Prix barré affiché si rempli</small>
+                        </div>
+                    </div>
+
+                    <div id="promotionSection" style="background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); border-radius: 12px; padding: 1rem 1.25rem; margin: 1rem 0; box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                <div style="width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-fire" style="color: #fff; font-size: 1.2rem;"></i>
+                                </div>
+                                <div>
+                                    <div style="color: #fff; font-weight: 700; font-size: 1rem;">Mettre en promotion</div>
+                                    <div style="color: rgba(255,255,255,0.8); font-size: 0.75rem;">Activer une réduction sur ce produit</div>
+                                </div>
+                            </div>
+                            <label class="promo-switch">
+                                <input type="checkbox" id="promoEnabled" onchange="window.productsManager.togglePromotion()">
+                                <span class="promo-slider"></span>
+                            </label>
+                        </div>
+                        <div id="promoDetails" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.2);">
+                            <div style="display: flex; gap: 1rem; align-items: stretch;">
+                                <div style="flex: 1; background: rgba(255,255,255,0.15); border-radius: 10px; padding: 0.75rem; text-align: center;">
+                                    <label for="promoPercentage" style="font-size: 0.75rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem; display: block;">RÉDUCTION</label>
+                                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.25rem;">
+                                        <input type="number" id="promoPercentage" min="1" max="99" value="10" step="1" 
+                                               style="width: 60px; padding: 0.5rem; border: none; border-radius: 8px; font-size: 1.25rem; text-align: center; font-weight: 700; background: #fff; color: #dc2626;"
+                                               onchange="window.productsManager.calculatePromoPrice()">
+                                        <span style="font-weight: 700; color: #fff; font-size: 1.25rem;">%</span>
+                                    </div>
+                                </div>
+                                <div style="flex: 1; background: rgba(34, 197, 94, 0.9); border-radius: 10px; padding: 0.75rem; text-align: center;">
+                                    <label style="font-size: 0.75rem; color: rgba(255,255,255,0.9); margin-bottom: 0.5rem; display: block;">NOUVEAU PRIX</label>
+                                    <div id="promoNewPrice" style="font-size: 1.25rem; font-weight: 700; color: #fff;">
+                                        -- €
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="productType">Type de produit</label>
+                            <input type="text" id="productType" placeholder="Ex: Bouquet, Peluche...">
+                        </div>
+                        <div class="form-group">
+                            <label for="productVendor">Vendeur</label>
+                            <input type="text" id="productVendor" value="My Flowers" placeholder="My Flowers">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="productTags">Tags (séparés par des virgules)</label>
+                        <input type="text" id="productTags" placeholder="Ex: bouquet, roses, nouveau">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Image du produit</label>
+                        <div class="product-upload-target" id="productUploadTarget">
+                            <button type="button" class="product-upload-target-btn is-active" id="productUploadTargetCover">Photo couverture</button>
+                            <button type="button" class="product-upload-target-btn" id="productUploadTargetGallery">Autres photos</button>
+                        </div>
+                        <div class="product-image-dropzone" id="productImageDropzone" tabindex="0">
+                            <input type="file" id="productImageFile" accept="image/*" multiple hidden>
+                            <div class="product-image-dropzone-text" id="productImageDropzoneText">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <span>Glisser-déposer des images ici ou cliquer pour choisir</span>
+                            </div>
+                        </div>
+                        <div class="product-images-sections">
+                            <div class="product-images-section">
+                                <h4>Photos du produit</h4>
+                                <div class="product-images-gallery" id="productImagesGallery"></div>
+                            </div>
+                        </div>
+                        <input type="url" id="productImage" hidden>
+                        <button type="button" id="addProductImageUrlBtn" hidden></button>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group" id="singleStockGroup">
+                            <label for="productInventory">Stock</label>
+                            <input type="number" id="productInventory" min="0" value="10" placeholder="10">
+                        </div>
+                        <div class="form-group">
+                            <label for="productStatus">Statut</label>
+                            <select id="productStatus">
+                                <option value="active">Actif</option>
+                                <option value="draft">Brouillon</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="variantStockContainer" style="display:none;">
+                        <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;">
+                            <i class="fas fa-layer-group" style="color:#8b5cf6;"></i> 
+                            <span><strong>Stock par variante</strong></span>
+                        </label>
+                        <div id="variantsList" style="border:1px solid #e5e7eb;border-radius:8px;background:white;"></div>
+                    </div>
+
+                    <div class="form-group" id="variantCreatorContainer" style="display:none;">
+                        <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+                            <i class="fas fa-plus-circle" style="color:#16a34a;"></i> 
+                            <span><strong>Gérer les options et variantes</strong></span>
+                            <small style="color:#9ca3af;font-weight:normal;margin-left:0.25rem;">(optionnel)</small>
+                        </label>
+
+                        <div id="optionsManagementContainer" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:1rem;margin-bottom:1rem;">
+                            <div style="font-size:0.85rem;color:#6b7280;margin-bottom:0.75rem;font-weight:500;">
+                                <i class="fas fa-cogs"></i> Gérer les options du produit
+                            </div>
+                            <div id="optionsDisplay" style="margin-bottom:0.75rem;"></div>
+                            
+                            <div style="display:flex;gap:0.5rem;">
+                                <input type="text" id="newOptionName" placeholder="Nom nouvelle option (ex: Taille)" 
+                                       style="flex:1;padding:0.5rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.85rem;">
+                                <button type="button" onclick="window.productsManager.addNewOption()"
+                                        style="background:#5B1013;color:white;padding:0.5rem 1rem;border-radius:6px;cursor:pointer;border:none;font-size:0.85rem;white-space:nowrap;">
+                                    <i class="fas fa-plus"></i> Ajouter option
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="variantCreatorList" style="margin:0.5rem 0;"></div>
+                        <button type="button" onclick="window.productsManager.addVariantRow()" 
+                                style="width:100%;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#16a34a;border:2px dashed #86efac;padding:0.6rem 1rem;border-radius:10px;cursor:pointer;font-size:0.85rem;display:flex;align-items:center;justify-content:center;gap:0.5rem;transition:all 0.2s;font-weight:500;"
+                                onmouseover="this.style.background='linear-gradient(135deg,#dcfce7,#d1fae5)';this.style.borderColor='#4ade80'"
+                                onmouseout="this.style.background='linear-gradient(135deg,#f0fdf4,#ecfdf5)';this.style.borderColor='#86efac'">
+                            <i class="fas fa-plus-circle"></i> Ajouter une variante
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="productCollection">Collection</label>
+                        <select id="productCollection">
+                            <option value="">-- Aucune --</option>
+                        </select>
+                        <small>Optionnel : associer à une collection</small>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelProductBtn">Annuler</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i>
+                            <span>Enregistrer</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="backend-api.js?v=2.0"></script>
+    <script src="collections-manager.js?v=2.0"></script>
+    <script src="products-manager.js?v=2.0"></script>
+    <script src="admin-panel.js?v=2.0"></script>
+    
+    <script>
+    // ===================================
+    // Planning Management (Delivery & Pickup)
+    // ===================================
+    // API_URL already defined in admin-panel.js
+    
+    // Factory function to create calendar managers
+    function createCalendarManager(type, apiEndpoint, elementIds) {
+        return {
+        type: type, // 'delivery' or 'pickup'
+        unavailableDates: [],
+        currentMonth: new Date().getMonth(),
+        currentYear: new Date().getFullYear(),
+        elementIds: elementIds,
+
+        async init() {
+            await this.loadUnavailableDates();
+            this.renderCalendar();
+            this.bindEvents();
+        },
+
+        bindEvents() {
+            const prevBtn = document.getElementById(this.elementIds.prevBtn);
+            const nextBtn = document.getElementById(this.elementIds.nextBtn);
+            
+            if (prevBtn && !prevBtn.hasAttribute('data-bound')) {
+                prevBtn.setAttribute('data-bound', 'true');
+                prevBtn.addEventListener('click', () => this.previousMonth());
+            }
+            
+            if (nextBtn && !nextBtn.hasAttribute('data-bound')) {
+                nextBtn.setAttribute('data-bound', 'true');
+                nextBtn.addEventListener('click', () => this.nextMonth());
+            }
+        },
+
+        previousMonth() {
+            this.currentMonth--;
+            if (this.currentMonth < 0) {
+                this.currentMonth = 11;
+                this.currentYear--;
+            }
+            this.renderCalendar();
+        },
+
+        nextMonth() {
+            this.currentMonth++;
+            if (this.currentMonth > 11) {
+                this.currentMonth = 0;
+                this.currentYear++;
+            }
+            this.renderCalendar();
+        },
+
+        renderCalendar() {
+            const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                               'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+            
+            // Update header
+            const headerElement = document.getElementById(this.elementIds.monthYear);
+            if (headerElement) {
+                headerElement.textContent = `${monthNames[this.currentMonth]} ${this.currentYear}`;
+            }
+
+            // Get first day of month and number of days
+            const firstDay = new Date(this.currentYear, this.currentMonth, 1);
+            const lastDay = new Date(this.currentYear, this.currentMonth + 1, 0);
+            const numDays = lastDay.getDate();
+            const startingDayOfWeek = firstDay.getDay();
+            
+            // Adjust for Monday start (0 = Monday, 6 = Sunday)
+            const adjustedStartDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const grid = document.getElementById(this.elementIds.grid);
+            if (!grid) return;
+            grid.innerHTML = '';
+
+            // Add empty cells for days before month starts
+            for (let i = 0; i < adjustedStartDay; i++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.style.cssText = 'aspect-ratio: 1; background: transparent;';
+                grid.appendChild(emptyCell);
+            }
+
+            // Add days of month
+            for (let day = 1; day <= numDays; day++) {
+                const date = new Date(this.currentYear, this.currentMonth, day);
+                const dateStr = this.formatDateToISO(date);
+                const isPast = date < today;
+                const isSunday = date.getDay() === 0;
+                const isUnavailable = this.unavailableDates.includes(dateStr);
+                const isToday = date.getTime() === today.getTime();
+
+                const dayCell = document.createElement('div');
+                
+                let backgroundColor = '#ffffff';
+                let textColor = '#1f2937';
+                let borderColor = '#e5e7eb';
+                let cursor = 'pointer';
+                let hoverBg = '#f3f4f6';
+
+                if (isPast || isSunday) {
+                    backgroundColor = '#f9fafb';
+                    textColor = '#d1d5db';
+                    cursor = 'not-allowed';
+                    hoverBg = backgroundColor;
+                } else if (isUnavailable) {
+                    backgroundColor = '#fee2e2';
+                    textColor = '#991b1b';
+                    borderColor = '#dc2626';
+                    hoverBg = '#fecaca';
+                } else if (isToday) {
+                    borderColor = this.type === 'delivery' ? '#5B1013' : '#16a34a';
+                    backgroundColor = this.type === 'delivery' ? '#fef2f2' : '#f0fdf4';
+                }
+
+                dayCell.style.cssText = `
+                    aspect-ratio: 1;
+                    background: ${backgroundColor};
+                    border: 2px solid ${borderColor};
+                    border-radius: 8px;
+                    cursor: ${cursor};
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: 600;
+                    font-size: 1rem;
+                    color: ${textColor};
+                    transition: all 0.2s;
+                    position: relative;
+                `;
+
+                dayCell.innerHTML = `
+                    <div>${day}</div>
+                    ${(isUnavailable && !isPast && !isSunday) ? '<i class="fas fa-ban" style="font-size: 0.7rem; margin-top: 0.25rem; opacity: 0.7;"></i>' : ''}
+                    ${isSunday ? '<i class="fas fa-store-slash" style="font-size: 0.7rem; margin-top: 0.25rem; opacity: 0.5;" title="Fermé"></i>' : ''}
+                `;
+
+                if (!isPast && !isSunday) {
+                    dayCell.addEventListener('mouseenter', () => {
+                        dayCell.style.background = hoverBg;
+                        dayCell.style.transform = 'scale(1.05)';
+                        dayCell.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+                    });
+                    dayCell.addEventListener('mouseleave', () => {
+                        dayCell.style.background = backgroundColor;
+                        dayCell.style.transform = 'scale(1)';
+                        dayCell.style.boxShadow = 'none';
+                    });
+                    dayCell.addEventListener('click', () => this.toggleDate(dateStr));
+                }
+
+                grid.appendChild(dayCell);
+            }
+        },
+
+        formatDateToISO(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        },
+
+        async toggleDate(dateStr) {
+            const isCurrentlyUnavailable = this.unavailableDates.includes(dateStr);
+            
+            if (isCurrentlyUnavailable) {
+                await this.removeUnavailableDate(dateStr, false);
+            } else {
+                await this.addUnavailableDate(dateStr);
+            }
+        },
+
+        async loadUnavailableDates() {
+            try {
+                const response = await fetch(`${API_URL}/${apiEndpoint}/unavailable-dates`);
+                if (response.ok) {
+                    const data = await response.json();
+                    this.unavailableDates = data.unavailableDates || [];
+                    this.renderUnavailableDatesList();
+                }
+            } catch (error) {
+                console.error(`Error loading ${type} unavailable dates:`, error);
+                this.showNotification('Erreur lors du chargement des dates', 'error');
+            }
+        },
+
+        renderUnavailableDatesList() {
+            const container = document.getElementById(this.elementIds.list);
+            if (!container) return;
+
+            if (this.unavailableDates.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; color: #9ca3af; padding: 2rem; background: #f9fafb; border-radius: 8px; border: 2px dashed #e5e7eb;">
+                        <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5;"></i>
+                        <p>Aucune date indisponible</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const sortedDates = [...this.unavailableDates].sort((a, b) => new Date(a) - new Date(b));
+            const managerName = type === 'delivery' ? 'DeliveryManager' : 'PickupManager';
+            const serviceLabel = type === 'delivery' ? 'Livraison' : 'Retrait';
+
+            container.innerHTML = sortedDates.map(dateStr => {
+                const date = new Date(dateStr + 'T12:00:00');
+                const formatted = date.toLocaleDateString('fr-FR', {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                });
+
+                return `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div style="width: 48px; height: 48px; background: white; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2px solid #fecaca;">
+                                <div style="font-size: 0.7rem; font-weight: 600; color: #dc2626; text-transform: uppercase; letter-spacing: 0.5px;">${date.toLocaleDateString('fr-FR', { month: 'short' })}</div>
+                                <div style="font-size: 1.25rem; font-weight: 700; color: #5B1013; line-height: 1;">${date.getDate()}</div>
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; color: #1f2937; text-transform: capitalize;">${formatted}</div>
+                                <div style="font-size: 0.85rem; color: #6b7280; margin-top: 0.25rem;">
+                                    <i class="fas fa-ban" style="color: #dc2626;"></i> ${serviceLabel} non disponible
+                                </div>
+                            </div>
+                        </div>
+                        <button onclick="${managerName}.removeUnavailableDate('${dateStr}', true)" style="background: white; color: #dc2626; border: 2px solid #fecaca; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s; display: flex; align-items: center; gap: 0.5rem;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='white'">
+                            <i class="fas fa-trash"></i> Supprimer
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        },
+
+        async addUnavailableDate(dateStr) {
+            if (this.unavailableDates.includes(dateStr)) {
+                this.showNotification('Cette date est déjà indisponible', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/${apiEndpoint}/unavailable-dates/${dateStr}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.unavailableDates = data.unavailableDates;
+                    this.renderUnavailableDatesList();
+                    this.renderCalendar();
+                    this.showNotification('Date marquée indisponible', 'success');
+                } else {
+                    throw new Error('Failed to add date');
+                }
+            } catch (error) {
+                console.error(`Error adding ${type} unavailable date:`, error);
+                this.showNotification('Erreur lors de l\'ajout', 'error');
+            }
+        },
+
+        async removeUnavailableDate(dateStr, confirm = true) {
+            if (confirm && !window.confirm(`Rendre cette date disponible ?\n\n${new Date(dateStr + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/${apiEndpoint}/unavailable-dates/${dateStr}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.unavailableDates = data.unavailableDates;
+                    this.renderUnavailableDatesList();
+                    this.renderCalendar();
+                    this.showNotification('Date à nouveau disponible', 'success');
+                } else {
+                    throw new Error('Failed to remove date');
+                }
+            } catch (error) {
+                console.error(`Error removing ${type} unavailable date:`, error);
+                this.showNotification('Erreur lors de la suppression', 'error');
+            }
+        },
+
+        showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+                color: white;
+                padding: 1rem 1.5rem;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+                z-index: 10000;
+                animation: slideIn 0.3s ease;
+            `;
+            notification.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+        };
+    }
+
+    // Create two separate managers
+    const DeliveryManager = createCalendarManager('delivery', 'delivery', {
+        prevBtn: 'prevMonthBtnDelivery',
+        nextBtn: 'nextMonthBtnDelivery',
+        monthYear: 'calendarMonthYearDelivery',
+        grid: 'calendarDaysGridDelivery',
+        list: 'unavailableDatesListDelivery'
+    });
+
+    const PickupManager = createCalendarManager('pickup', 'pickup', {
+        prevBtn: 'prevMonthBtnPickup',
+        nextBtn: 'nextMonthBtnPickup',
+        monthYear: 'calendarMonthYearPickup',
+        grid: 'calendarDaysGridPickup',
+        list: 'unavailableDatesListPickup'
+    });
+
+    // Tab switching logic
+    document.addEventListener('DOMContentLoaded', () => {
+        const tabButtons = document.querySelectorAll('.delivery-tab');
+        const deliveryContent = document.getElementById('deliveryTabContent');
+        const pickupContent = document.getElementById('pickupTabContent');
+
+        // FIX: Appliquer le style actif sur l'onglet livraison dès le départ
+        const deliveryTab = document.querySelector('.delivery-tab[data-tab="delivery"]');
+        if (deliveryTab) {
+            deliveryTab.style.color = '#5B1013';
+            deliveryTab.style.borderBottomColor = '#5B1013';
+        }
+
+        // FIX: Supprimer le scroll limité sur les listes de dates — affichage complet
+        const listsToExpand = ['unavailableDatesListDelivery', 'unavailableDatesListPickup'];
+        listsToExpand.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.style.maxHeight = 'none';
+                el.style.overflowY = 'visible';
+                el.style.paddingRight = '0';
+            }
+        });
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const tab = button.dataset.tab;
+                
+                // Update active tab styling
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('active');
+                    btn.style.color = '#6b7280';
+                    btn.style.borderBottomColor = 'transparent';
+                });
+                button.classList.add('active');
+                button.style.color = tab === 'delivery' ? '#5B1013' : '#16a34a';
+                button.style.borderBottomColor = tab === 'delivery' ? '#5B1013' : '#16a34a';
+
+                // Switch content
+                if (tab === 'delivery') {
+                    deliveryContent.style.display = 'block';
+                    pickupContent.style.display = 'none';
+                    if (!DeliveryManager._initialized) {
+                        DeliveryManager._initialized = true;
+                        DeliveryManager.init();
+                    }
+                } else {
+                    deliveryContent.style.display = 'none';
+                    pickupContent.style.display = 'block';
+                    if (!PickupManager._initialized) {
+                        PickupManager._initialized = true;
+                        PickupManager.init();
+                    }
+                }
+            });
+        });
+
+        // Initialize delivery tab on section show
+        setTimeout(() => {
+            const deliveryNavItem = document.querySelector('.admin-nav-item[data-section="delivery"]');
+            if (deliveryNavItem) {
+                deliveryNavItem.addEventListener('click', () => {
+                    setTimeout(() => {
+                        if (!DeliveryManager._initialized) {
+                            DeliveryManager._initialized = true;
+                            DeliveryManager.init();
+                        }
+                    }, 100);
+                });
+            }
+
+            // Auto-init if already visible
+            if (deliveryContent && deliveryContent.offsetParent !== null) {
+                if (!DeliveryManager._initialized) {
+                    DeliveryManager._initialized = true;
+                    DeliveryManager.init();
+                }
+            }
+        }, 1000);
+    });
+
+    // Make accessible globally
+    window.DeliveryManager = DeliveryManager;
+    window.PickupManager = PickupManager;
+    </script>
+
+    <style>
+    @keyframes slideIn {
+        from { transform: translateX(400px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(400px); opacity: 0; }
+    }
+    .delivery-tab.active { font-weight: 700; }
+
+    /* =========================================
+       Styles responsives pour les filtres Produits 
+       ========================================= */
+    .product-filters-row {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    
+    .product-filters-row .search-box {
+        flex: 2;
+        margin: 0;
+        min-width: 250px;
+    }
+    
+    .product-filter-select-wrapper {
+        flex: 1;
+        min-width: 200px;
+        position: relative;
+    }
+    
+    .product-filter-select-wrapper select {
+        width: 100%;
+        padding: 0.8rem 2.5rem 0.8rem 1.25rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 50px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        background: white;
+        color: #374151;
+        cursor: pointer;
+        outline: none;
+        appearance: none;
+        -webkit-appearance: none;
+        transition: border-color 0.2s;
+        height: 48px;
+    }
+    
+    .product-filter-select-wrapper select:focus {
+        border-color: #5B1013;
+    }
+    
+    .product-filter-select-wrapper i {
+        position: absolute;
+        right: 1.25rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #9ca3af;
+        pointer-events: none;
+    }
+    
+    @media (max-width: 768px) {
+        .product-filters-row {
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .product-filters-row .search-box, 
+        .product-filter-select-wrapper {
+            width: 100%;
+            flex: none;
+        }
+    }
+    </style>
+
+    <nav class="admin-bottom-nav" id="adminBottomNav">
+        <button class="bottom-nav-item active" data-section="dashboard">
+            <i class="fas fa-chart-line"></i>
+            <span>Dashboard</span>
+        </button>
+        <button class="bottom-nav-item" data-section="orders">
+            <i class="fas fa-shopping-bag"></i>
+            <span>Commandes</span>
+        </button>
+        <button class="bottom-nav-item" data-section="products">
+            <i class="fas fa-box"></i>
+            <span>Produits</span>
+        </button>
+        <button class="bottom-nav-item" data-section="delivery">
+            <i class="fas fa-calendar"></i>
+            <span>Dates</span>
+        </button>
+        <button class="bottom-nav-item" data-section="collections">
+            <i class="fas fa-folder"></i>
+            <span>Collections</span>
+        </button>
+    </nav>
+
+    <script>
+    // ===================================
+    // BOTTOM NAV SYNC + SWIPE (mobile)
+    // ===================================
+    document.addEventListener('DOMContentLoaded', function() {
+
+        // Bottom navigation bar — sync avec la navigation principale
+        const bottomNavItems = document.querySelectorAll('.bottom-nav-item[data-section]');
+        const mainNavItems = document.querySelectorAll('.admin-nav-item[data-section]');
+
+        function setActiveBottomNav(section) {
+            bottomNavItems.forEach(function(btn) {
+                btn.classList.toggle('active', btn.dataset.section === section);
+            });
+        }
+
+        bottomNavItems.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const section = btn.dataset.section;
+                const navItem = document.querySelector('.admin-nav-item[data-section="' + section + '"]');
+                if (navItem) {
+                    navItem.click();
+                    setActiveBottomNav(section);
+                }
+            });
+        });
+
+        mainNavItems.forEach(function(item) {
+            item.addEventListener('click', function() {
+                const section = item.dataset.section;
+                if (section) setActiveBottomNav(section);
+            });
+        });
+
+        // Masquer la bottom nav si pas mobile
+        function handleResize() {
+            const bottomNav = document.getElementById('adminBottomNav');
+            if (bottomNav) {
+                bottomNav.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+            }
+        }
+        handleResize();
+        window.addEventListener('resize', handleResize);
+
+        // Swipe pour fermer/ouvrir la sidebar
+        let touchStartX = 0;
+        let touchStartY = 0;
+        const sidebar = document.getElementById('adminSidebar');
+
+        document.addEventListener('touchstart', function(e) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        document.addEventListener('touchend', function(e) {
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            const dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
+            const dy_signed = e.changedTouches[0].clientY - touchStartY;
+            if (!sidebar) return;
+            // Swipe vers le haut → fermer
+            if (dy_signed < -60 && Math.abs(dx) < 50 && sidebar.classList.contains('active')) {
+                sidebar.classList.remove('active');
+            }
+        }, { passive: true });
+    });
+    </script>
+    <script src="mobile-pages.js?v=2.0"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+    <style>
+        .sortable-ghost { opacity: 0.4; background: #dbeafe !important; border-color: #93c5fd !important; }
+        #reorderCollectionsBtn { background: #f3f4f6; border: 1px solid #d1d5db; color: #374151; }
+        #reorderCollectionsBtn:hover { background: #e5e7eb; }
+    </style>
+
+    <!-- Modal réordonnancement collections -->
+    <div id="reorderCollectionsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:#fff; border-radius:12px; padding:2rem; width:min(500px, 95vw); max-height:80vh; display:flex; flex-direction:column; gap:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2 style="margin:0; font-size:1.2rem;"><i class="fas fa-sort" style="color:#22c55e; margin-right:0.5rem;"></i>Ordre d'affichage des collections</h2>
+                <button id="closeReorderModal" style="background:none; border:none; font-size:1.4rem; cursor:pointer; color:#6b7280;">&times;</button>
+            </div>
+            <p style="margin:0; font-size:0.85rem; color:#6b7280;"><i class="fas fa-grip-vertical" style="margin-right:0.3rem;"></i>Glissez-déposez les collections pour changer leur ordre d'affichage dans la boutique.</p>
+            <div id="reorderCollectionsList" style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:0.5rem; padding:0.25rem;"></div>
+            <div style="display:flex; gap:0.75rem; justify-content:flex-end; padding-top:0.5rem; border-top:1px solid #e5e7eb;">
+                <button id="cancelReorderBtn" class="btn btn-secondary">Annuler</button>
+                <button id="saveReorderBtn" class="btn btn-primary"><i class="fas fa-save" style="margin-right:0.4rem;"></i>Sauvegarder l'ordre</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
