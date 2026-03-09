@@ -151,6 +151,17 @@ class ShopifyCollectionsManager {
             this.openCollectionModal();
         });
 
+        // Reorder Collections
+        document.getElementById('reorderCollectionsBtn')?.addEventListener('click', () => {
+            this.openCollectionsReorderPanel();
+        });
+        document.getElementById('saveCollectionsOrderBtn')?.addEventListener('click', () => {
+            this.saveCollectionsOrder();
+        });
+        document.getElementById('cancelCollectionsOrderBtn')?.addEventListener('click', () => {
+            this.cancelCollectionsReorder();
+        });
+
 
 
         // Quick actions
@@ -318,10 +329,6 @@ class ShopifyCollectionsManager {
         }
         grid.innerHTML = orderedCollections.map(collection => this.getCollectionCardHTML(collection)).join('');
 
-        // Init always-on drag and drop for collections
-        this.initCollectionsDragAndDrop(grid);
-        this.updateCollectionOrderNumbers(grid);
-
         // Add event listeners
         this.collections.forEach(collection => {
             document.querySelector(`[data-edit-collection="${collection.id}"]`)?.addEventListener('click', () => {
@@ -420,8 +427,6 @@ class ShopifyCollectionsManager {
         
         return `
             <div class="category-card" data-collection-id="${collection.id}">
-                <span class="collection-drag-handle" title="Glisser pour réordonner"><i class="fas fa-grip-vertical"></i></span>
-                <span class="collection-order-number"></span>
                 ${imageUrl ? 
                     `<img src="${imageUrl}" alt="${collection.title}" class="category-card-image">` :
                     `<div class="category-card-image" style="display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);">
@@ -1446,77 +1451,91 @@ class ShopifyCollectionsManager {
     }
 
     // ===================================
-    // REORDER COLLECTIONS (toujours actif)
+    // REORDER COLLECTIONS
     // ===================================
 
-    updateCollectionOrderNumbers(grid) {
-        const cards = grid.querySelectorAll('.category-card');
-        cards.forEach((card, index) => {
-            const numEl = card.querySelector('.collection-order-number');
-            if (numEl) numEl.textContent = index + 1;
+    openCollectionsReorderPanel() {
+        const panel = document.getElementById('collectionsReorderPanel');
+        const list  = document.getElementById('collectionsReorderList');
+        if (!panel || !list) return;
+
+        // Build ordered list
+        let ordered = [...this.collections];
+        if (this.collectionsOrder && this.collectionsOrder.length > 0) {
+            const map = {};
+            this.collectionsOrder.forEach((id, i) => { map[String(id)] = i; });
+            ordered.sort((a, b) => {
+                const pa = map[String(a.id)] !== undefined ? map[String(a.id)] : 9999;
+                const pb = map[String(b.id)] !== undefined ? map[String(b.id)] : 9999;
+                return pa - pb;
+            });
+        }
+
+        list.innerHTML = ordered.map((col, i) => {
+            const img = col.image?.src || '';
+            return `<div class="col-reorder-item" data-id="${col.id}" draggable="true">
+                <span class="col-reorder-handle"><i class="fas fa-grip-vertical"></i></span>
+                <span class="col-reorder-num">${i + 1}</span>
+                ${img ? `<img src="${img}" class="col-reorder-img">` : '<div class="col-reorder-img no-img"></div>'}
+                <span class="col-reorder-title">${col.title}</span>
+            </div>`;
+        }).join('');
+
+        this._origColOrder = ordered.map(c => String(c.id));
+        this.initColReorderDrag(list);
+
+        panel.style.display = 'flex';
+    }
+
+    initColReorderDrag(list) {
+        let dragged = null;
+        list.querySelectorAll('.col-reorder-item').forEach(item => {
+            item.addEventListener('dragstart', () => {
+                dragged = item;
+                setTimeout(() => item.classList.add('col-reorder-dragging'), 0);
+            });
+            item.addEventListener('dragend', () => {
+                item.classList.remove('col-reorder-dragging');
+                dragged = null;
+                this.updateColReorderNums(list);
+            });
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (!dragged || dragged === item) return;
+                const mid = item.getBoundingClientRect().top + item.offsetHeight / 2;
+                list.insertBefore(dragged, e.clientY < mid ? item : item.nextSibling);
+            });
         });
     }
 
-    initCollectionsDragAndDrop(grid) {
-        const cards = grid.querySelectorAll('.category-card');
-        let draggedItem = null;
-
-        cards.forEach(card => {
-            const handle = card.querySelector('.collection-drag-handle');
-            if (!handle) return;
-
-            card.setAttribute('draggable', 'true');
-
-            card.addEventListener('dragstart', (e) => {
-                draggedItem = card;
-                setTimeout(() => card.classList.add('collection-dragging'), 0);
-                e.dataTransfer.effectAllowed = 'move';
-            });
-
-            card.addEventListener('dragend', async () => {
-                card.classList.remove('collection-dragging');
-                draggedItem = null;
-                this.updateCollectionOrderNumbers(grid);
-                await this.saveCollectionsOrder();
-            });
-
-            card.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                if (!draggedItem || draggedItem === card) return;
-                const rect = card.getBoundingClientRect();
-                const mid = rect.top + rect.height / 2;
-                if (e.clientY < mid) {
-                    grid.insertBefore(draggedItem, card);
-                } else {
-                    grid.insertBefore(draggedItem, card.nextSibling);
-                }
-            });
+    updateColReorderNums(list) {
+        list.querySelectorAll('.col-reorder-item').forEach((item, i) => {
+            item.querySelector('.col-reorder-num').textContent = i + 1;
         });
+    }
+
+    cancelCollectionsReorder() {
+        document.getElementById('collectionsReorderPanel').style.display = 'none';
     }
 
     async saveCollectionsOrder() {
-        const grid = document.getElementById('collectionsGrid');
-        if (!grid) return;
-
-        const newOrder = Array.from(grid.querySelectorAll('.category-card')).map(c => c.dataset.collectionId);
-
+        const list = document.getElementById('collectionsReorderList');
+        if (!list) return;
+        const newOrder = Array.from(list.querySelectorAll('.col-reorder-item')).map(el => el.dataset.id);
         try {
-            const response = await fetch(`${this.apiUrl}/boutique-config`, {
+            const res = await fetch(`${this.apiUrl}/boutique-config`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ collectionsOrder: newOrder })
             });
-
-            if (!response.ok) throw new Error('Erreur sauvegarde');
-
+            if (!res.ok) throw new Error();
             this.collectionsOrder = newOrder;
-            this.showNotification('Ordre sauvegardé !', 'success');
-        } catch (error) {
-            console.error('Error saving collections order:', error);
+            document.getElementById('collectionsReorderPanel').style.display = 'none';
+            this.showNotification('Ordre des collections sauvegardé !', 'success');
+        } catch {
             this.showNotification('Erreur lors de la sauvegarde', 'error');
         }
     }
-
 }
 
 // Add CSS for animations
