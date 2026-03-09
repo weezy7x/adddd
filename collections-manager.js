@@ -1531,6 +1531,7 @@ class ShopifyCollectionsManager {
             if (!res.ok) throw new Error();
             this.collectionsOrder = newOrder;
             document.getElementById('collectionsReorderPanel').style.display = 'none';
+            this.renderCollections();
             this.showNotification('Ordre des collections sauvegardé !', 'success');
         } catch {
             this.showNotification('Erreur lors de la sauvegarde', 'error');
